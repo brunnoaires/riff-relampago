@@ -28,6 +28,14 @@ textarea.field{min-height:84px;resize:vertical;font:500 .78rem/1.4 ui-monospace,
 .note{color:var(--star);font-size:.88rem;margin:12px 0 0}
 .sep{border:0;border-top:1px solid var(--panel-edge);margin:20px 0}
 .actions{display:flex;gap:18px;flex-wrap:wrap}
+.net{display:flex;flex-direction:column;gap:10px}
+.net .row{display:flex;gap:8px;flex-wrap:wrap}
+.net .row .field{flex:1 1 140px;min-width:0}
+.net .btn{flex:0 0 auto}
+.roomcode{font:700 1.9rem var(--ui);letter-spacing:.18em;color:var(--fire)}
+.net p{margin:0;color:var(--muted);font-size:.86rem;line-height:1.45}
+.net p b{color:var(--fg)}
+.song.locked{cursor:default}
 .yt-panel{text-align:left}
 .yt-panel h2{margin-top:16px}
 #tapStart{position:fixed;z-index:6;left:50%;top:50%;transform:translate(-50%,-50%);padding:16px 34px;border:0;border-radius:999px;font:400 1.6rem var(--display);color:#1b0b02;background:linear-gradient(180deg,#ffd27a,#ff8a1f 60%,#d9480f);cursor:pointer}
@@ -107,7 +115,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
 
 <section id="menu" class="overlay">
   <div class="panel">
-    <p class="eyebrow">Turnê de garagem · sozinho ou em dupla</p>
+    <p class="eyebrow">Turnê de garagem · sozinho, em dupla ou online</p>
     <h1>Riff Relâmpago</h1>
     <p class="lede">Acerte as notas quando chegarem à linha, segure as notas longas e guarde as frases de estrela para soltar o Poder Estelar. Toque as músicas da casa, grave o chart de qualquer música do YouTube ou carregue um arquivo seu para o jogo criar as notas sozinho.</p>
     <div class="cols">
@@ -116,6 +124,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
       </div>
       <div class="col">
         <div><h2>Jogadores</h2><div id="players" class="seg"></div></div>
+        <div id="netBox" hidden><h2>Duelo online</h2><div id="netInner" class="net"></div></div>
         <div><h2>Dificuldade</h2><div id="diffs"></div></div>
         <div id="modeBox"><h2>Modo</h2><div id="modes" class="seg"></div><p class="hint" id="modeHint"></p></div>
         <div><h2><label for="offset">Atraso do áudio</label><span id="offVal">0 ms</span></h2><input type="range" id="offset" min="-150" max="150" step="5" value="0"><p class="hint">Se as notas parecerem adiantadas em relação ao som, aumente.</p></div>
@@ -171,6 +180,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
   </div>
 </section>
 
+<script src="vendor/peerjs.min.js"></script>
 <script>
 (()=>{
 'use strict';
@@ -505,7 +515,7 @@ function decodeChart(s){
 }
 
 // ---------- estado ----------
-const G={state:'menu',paused:false,song:null,songDef:SONGS[0],players:[],nPlayers:1,diffs:['medium','medium'],mode:'tap',offset:0,custom:null,src:null};
+const G={online:false,net:null,netMsg:null,state:'menu',paused:false,song:null,songDef:SONGS[0],players:[],nPlayers:1,diffs:['medium','medium'],mode:'tap',offset:0,custom:null,src:null};
 let P=null; // jogador da vez
 window.__rr=G;G.songT=()=>songT();
 const sel=store.get('rr:prefs',{});
@@ -514,8 +524,9 @@ else{const yc=ytList().find(c=>'yt:'+c.id===sel.song);if(yc)G.songDef=ytDef(yc);
 if(Array.isArray(sel.diffs))sel.diffs.forEach((d,i)=>{if(DIFFS[d])G.diffs[i]=d;});
 if(MODES[sel.mode])G.mode=sel.mode;
 if(sel.n===2)G.nPlayers=2;
+if(sel.n==='online')G.online=true;
 if(typeof sel.offset==='number')G.offset=sel.offset;
-const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.nPlayers,offset:G.offset});
+const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset});
 
 function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0};}
 function songT(){
@@ -523,17 +534,20 @@ function songT(){
   return AC.currentTime-G.startTime-(G.lat||0)-G.offset/1000;
 }
 function stopSource(){if(G.src){try{G.src.stop();}catch(e){}G.src=null;}}
-async function startGame(){
+async function startGame(startAt){
+  if(typeof startAt!=='number')startAt=0;
   if(G.songDef.custom&&!G.custom)return;
-  if(G.songDef.yt)return startYT();
+  if(G.online&&G.songDef.custom)return;
+  const NP=G.online?1:G.nPlayers;
+  if(G.songDef.yt)return startYT(startAt,NP);
   initAudio();
   if(AC.state==='suspended')AC.resume();
   stopSource();
   const custom=!!G.songDef.custom;
   G.song=custom?{custom:true,spb:G.custom.an.spb,bpm:G.custom.an.bpm,beat0:G.custom.an.beat0,events:[],endTime:G.custom.buffer.duration+.5}:generateSong(G.songDef);
   G.players=[];
-  for(let i=0;i<G.nPlayers;i++){
-    const pl=makePlayer(i,G.diffs[i],G.nPlayers===1?G.mode:'tap');
+  for(let i=0;i<NP;i++){
+    const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');
     const ch=custom?buildCustomChart(G.custom.an,pl.diff):buildChart(G.song,pl.diff);
     pl.notes=ch.notes;pl.phrases=ch.phrases;G.players.push(pl);
   }
@@ -544,21 +558,21 @@ async function startGame(){
   master.gain.cancelScheduledValues(now);master.gain.setValueAtTime(.85,now);
   buses.trackGain.gain.cancelScheduledValues(now);buses.trackGain.gain.setValueAtTime(.9,now);
   buses.muffle.frequency.cancelScheduledValues(now);buses.muffle.frequency.setValueAtTime(20000,now);
-  buses.pm.forEach((b,i)=>{b.g.gain.cancelScheduledValues(now);b.g.gain.setValueAtTime(1,now);if(b.p)b.p.pan.value=G.nPlayers===2?(i?.35:-.35):0;});
+  buses.pm.forEach((b,i)=>{b.g.gain.cancelScheduledValues(now);b.g.gain.setValueAtTime(1,now);if(b.p)b.p.pan.value=NP===2?(i?.35:-.35):0;});
   G.lat=(AC.outputLatency||0)+(AC.baseLatency||0);
-  G.startTime=now+(custom?2.4:1.2);
+  G.startTime=startAt?now+(startAt-performance.now())/1000:now+(custom?2.4:1.2);
   if(custom){const s=AC.createBufferSource();s.buffer=G.custom.buffer;s.connect(buses.muffle);s.start(G.startTime);G.src=s;}
   show(null);
   pauseBtn.hidden=false;
 }
-async function startYT(){
+async function startYT(startAt,NP){
   initAudio();if(AC.state==='suspended')AC.resume();
   stopSource();
   const ch=G.songDef.chart;
   G.song={yt:true,spb:.5,bpm:120,beat0:0,events:[],endTime:ytEnd(ch)};
   G.players=[];
-  for(let i=0;i<G.nPlayers;i++){const pl=makePlayer(i,G.diffs[i],G.nPlayers===1?G.mode:'tap');const c2=buildYTChart(ch,pl.diff);pl.notes=c2.notes;pl.phrases=c2.phrases;G.players.push(pl);}
-  Object.assign(G,{state:'play',paused:false,sched:0,ytGo:false,ytStartAt:performance.now()+1e9});
+  for(let i=0;i<NP;i++){const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');const c2=buildYTChart(ch,pl.diff);pl.notes=c2.notes;pl.phrases=c2.phrases;G.players.push(pl);}
+  Object.assign(G,{state:'play',paused:false,sched:0,ytGo:false,ytSeek:0,ytStartAt:performance.now()+1e9});
   layoutPlayers();
   master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime);
   show(null);$('yt').hidden=false;pauseBtn.hidden=false;
@@ -566,7 +580,8 @@ async function startYT(){
   try{await ytPrepare(ch.videoId);}catch(e){if(G.ytToken===token){toMenu();menuNote(ytErrText(e.message),true);}return;}
   if(G.ytToken!==token||G.state!=='play')return;
   YTP.player.setPlaybackRate(1);YTP.player.setVolume(100);
-  G.ytStartAt=performance.now()+2400;
+  if(startAt){const late=(performance.now()-startAt)/1000;if(late>0){G.ytSeek=late;G.ytStartAt=performance.now();}else G.ytStartAt=startAt;}
+  else G.ytStartAt=performance.now()+2400;
 }
 async function startRecording(videoId,rate){
   initAudio();if(AC.state==='suspended')AC.resume();
@@ -697,8 +712,8 @@ function endAudio(fade){
   if(G.src){try{G.src.stop(t+fade+.02);}catch(e){}G.src=null;}
   G.sched=G.song.events.length;
 }
-function fail(){G.state='fail';if(G.song.yt&&YTP.player)YTP.player.pauseVideo();endAudio(.6);setTimeout(()=>{master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime);sfxCrowd(AC.currentTime,2.5,.5,true);},650);results(false);}
-function finish(){G.state='done';sfxCrowd(AC.currentTime,3.5,.55);results(true);}
+function fail(){G.state='fail';netSendEnd(false,false);if(G.song.yt&&YTP.player)YTP.player.pauseVideo();endAudio(.6);setTimeout(()=>{master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime);sfxCrowd(AC.currentTime,2.5,.5,true);},650);results(false);}
+function finish(){G.state='done';netSendEnd(true,false);sfxCrowd(AC.currentTime,3.5,.55);results(true);}
 
 // ---------- efeitos ----------
 function laneX(l,p){return P.CX+(l-2)*P.laneW*p;}
@@ -850,6 +865,7 @@ function drawHUD(now,t){
   c.globalAlpha=1;
   if(P.out){c.fillStyle='rgba(8,4,10,.6)';c.fillRect(CX-boardW/2,yAt(pz(ZMAX)),boardW,H);c.fillStyle='#e5383b';c.font=`400 ${Math.min(44,boardW*.14)}px "Metal Mania",Impact,sans-serif`;c.fillText('VAIADO',CX,H*.55);}
   if(t<0){c.fillStyle='rgba(255,255,255,.85)';c.font=`400 ${Math.min(64,(x1-x0)*.11)}px "Metal Mania",Impact,sans-serif`;c.fillText(two?`JOGADOR ${P.i+1}`:'PREPARE-SE',CX,H*.4);}
+  if(P.i===0&&G.online)drawOpp();
 }
 
 let lastFrame=performance.now();
@@ -858,7 +874,7 @@ function frame(){
   const now=performance.now(),dt=Math.min(.05,(now-lastFrame)/1000);lastFrame=now;
   let t=0,beatPh=(now/1000*2)%1,excite=.55,sp=false;
   if(G.song&&G.song.yt&&(G.state==='play'||G.state==='record')&&!G.paused){
-    if(!G.ytGo&&now>=G.ytStartAt){G.ytGo=true;G.ytWatch=now;YTP.player.playVideo();}
+    if(!G.ytGo&&now>=G.ytStartAt){G.ytGo=true;G.ytWatch=now;if(G.ytSeek){YTP.player.seekTo(G.ytSeek+(now-G.ytStartAt)/1000,true);G.ytSeek=0;}YTP.player.playVideo();}
     if(G.ytGo&&!YTP.playing&&YTP.state!==3&&YTP.state!==0&&now-G.ytWatch>3000)$('tapStart').hidden=false;
   }
   if(G.state==='record'){drawRecord(now,dt);return;}
@@ -928,7 +944,7 @@ function touchTarget(x){const p=G.players.length>1&&x>=W/2?G.players[1]:G.player
 cv.addEventListener('pointerdown',e=>{if(G.state==='record'&&!G.paused&&e.pointerType!=='mouse'){e.preventDefault();const[p,l]=touchTarget(e.clientX);p.touch=true;touches.set(e.pointerId,[p,l]);recDown(l);return;}if(G.state!=='play'||G.paused||e.pointerType==='mouse')return;e.preventDefault();const[p,l]=touchTarget(e.clientX);P=p;P.touch=true;touches.set(e.pointerId,[p,l]);press(l);});
 const endTouch=e=>{if(!touches.has(e.pointerId))return;const[p,l]=touches.get(e.pointerId);touches.delete(e.pointerId);if(G.state==='record'){recUp(l);return;}if(![...touches.values()].some(([q,m])=>q===p&&m===l)){P=p;release(l);}};
 cv.addEventListener('pointerup',endTouch);cv.addEventListener('pointercancel',endTouch);
-addEventListener('blur',()=>{if((G.state==='play'||G.state==='record')&&!G.paused)togglePause();});
+addEventListener('blur',()=>{if(G.online&&G.state==='play')return;if((G.state==='play'||G.state==='record')&&!G.paused)togglePause();});
 
 // ---------- telas ----------
 const $=id=>document.getElementById(id);
@@ -936,6 +952,15 @@ const pauseBtn=$('pauseBtn'),spBtns=[$('spBtn0'),$('spBtn1')];
 function show(id){if(id!=='menu')$('menuNote').hidden=true;for(const s of['menu','pause','results','ytPanel'])$(s).hidden=s!==id;if(id){pauseBtn.hidden=true;spBtns.forEach(b=>b.hidden=true);}}
 function togglePause(){
   if(G.state!=='play'&&G.state!=='record')return;
+  if(G.online&&G.state==='play'){
+    if($('pause').hidden){
+      $('resumeBtn').textContent='Voltar ao jogo';$('quitBtn').textContent='Sair do duelo';
+      $('restartBtn').hidden=true;$('saveRecBtn').hidden=true;
+      show('pause');$('pause').querySelector('h1').textContent='A música continua';$('resumeBtn').focus();
+    }else{show(null);pauseBtn.hidden=false;}
+    return;
+  }
+  $('restartBtn').hidden=false;$('pause').querySelector('h1').textContent='Pausado';
   G.paused=!G.paused;
   const rec=G.state==='record',yt=G.song&&G.song.yt&&YTP.player;
   if(G.paused){
@@ -958,15 +983,20 @@ $('resumeBtn').onclick=togglePause;
 $('restartBtn').onclick=()=>{AC.resume();if(G.state==='record'){const r=G.rec;startRecording(r.videoId,r.rate);return;}endAudio(.05);startGame();};
 $('saveRecBtn').onclick=()=>{AC.resume();saveRecording();};
 const toMenu=()=>{stopSource();G.ytToken=0;if(YTP.player&&YTP.player.pauseVideo){try{YTP.player.pauseVideo();}catch(e){}}$('yt').hidden=true;$('tapStart').hidden=true;G.rec=null;G.state='menu';G.song=null;G.players=[];buildMenu();show('menu');};
-$('quitBtn').onclick=()=>{AC.resume();if(G.song&&!G.song.yt)endAudio(.05);toMenu();};
+$('quitBtn').onclick=()=>{AC.resume();if(G.online&&G.state==='play')netSendEnd(false,true);if(G.song&&!G.song.yt)endAudio(.05);toMenu();};
 $('tapStart').onclick=()=>{if(YTP.player)YTP.player.playVideo();$('tapStart').hidden=true;G.ytWatch=performance.now();};
-$('againBtn').onclick=startGame;
+$('againBtn').onclick=()=>{if(G.online&&G.net&&G.net.connected){if(G.net.host)netHostStart();return;}startGame();};
 $('menuBtn').onclick=toMenu;
 
 function results(ok){
   const name=G.songDef.custom?G.custom.name:G.songDef.name;
   if(G.song.yt&&YTP.player&&ok)setTimeout(()=>{try{YTP.player.pauseVideo();}catch(e){}},1500);
-  const body=$('resBody');
+  const body=$('resBody');$('againBtn').disabled=false;
+  if(G.online&&G.net&&G.players.length===1){
+    G.myEnd={ok};
+    setTimeout(()=>{renderOnlineResults();show('results');$('againBtn').focus();},ok?900:1200);
+    return;
+  }
   if(G.players.length===1){
     P=G.players[0];
     const total=P.notes.length,pct=total?Math.round(P.hits/total*100):0;
@@ -989,12 +1019,224 @@ function results(ok){
   setTimeout(()=>{show('results');$('againBtn').focus();},ok?900:1200);
 }
 
+function renderOnlineResults(){
+  const net=G.net,me=G.players[0];if(!me)return;
+  const name=G.songDef.name,oppName=(net&&net.oppName)||'Seu amigo',o=net&&net.oppEnd,live=net&&net.opp;
+  const pct=(h,n)=>n?Math.round(h/n*100):0;
+  const mine={who:'Você · '+me.D.label,s:me.score,ln:`${pct(me.hits,me.notes.length)}% das notas<br>sequência de ${me.maxCombo}${me.out?'<br>foi vaiado':''}`};
+  let opp,done=!!o;
+  if(o)opp={who:escH(oppName)+(o.diff&&DIFFS[o.diff]?' · '+DIFFS[o.diff].label:''),s:o.s,ln:o.quit?'saiu antes do fim':`${pct(o.h,o.n)}% das notas<br>sequência de ${o.mc}${o.out?'<br>foi vaiado':''}`};
+  else opp={who:escH(oppName),s:live?live.s:0,ln:net&&net.connected?'ainda tocando…':'saiu da sala'};
+  if(!o&&!(net&&net.connected))done=true;
+  const win=!done?-2:(o&&o.quit&&!me.out)?0:(mine.s===opp.s?-1:(mine.s>opp.s?0:1));
+  $('resEyebrow').textContent=`${name} · duelo online`;
+  $('resTitle').textContent=!done?`Esperando ${oppName} terminar…`:win<0?'Empate!':win===0?(o&&o.quit?`${oppName} desistiu`:'Você venceu!'):`${oppName} venceu`;
+  $('resBody').innerHTML=`<div class="versus">${[mine,opp].map((p,i)=>`<div class="${i===win?'win':''}"><div class="who">${p.who}</div><div class="sc">${(+p.s||0).toLocaleString('pt-BR')}</div><div class="ln">${p.ln}</div></div>`).join('')}</div>`;
+  const ab=$('againBtn');
+  if(net&&net.connected){ab.textContent=!net.host?'Esperando '+oppName+' começar':o?'Jogar de novo com '+oppName:'Esperando '+oppName+' terminar';ab.disabled=!net.host||!o;}
+  else{ab.textContent='Tocar sozinho';ab.disabled=false;}
+}
+
+// ---------- online ----------
+const NET_PREFIX='riffrelampago-v1-';
+const escH=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const num=v=>Number.isFinite(+v)?+v:0;
+function netCodeNew(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';const r=new Uint32Array(5);crypto.getRandomValues(r);for(let i=0;i<5;i++)s+=A[r[i]%A.length];return s;}
+function myName(){return String(store.get('rr:name','')||'').trim().slice(0,20)||'Jogador';}
+function netStatus(text,bad){G.netMsg=text?{text,bad:!!bad}:null;}
+function netOpts(){return Object.assign({debug:0},window.RR_PEER_OPTS||{});}
+function netReset(){
+  const n=G.net;G.net=null;
+  if(!n)return;
+  clearInterval(n.pingIv);
+  try{if(n.conn)n.conn.close();}catch(e){}
+  try{if(n.peer)n.peer.destroy();}catch(e){}
+}
+function netSend(o){const n=G.net;if(n&&n.conn&&n.connected){try{n.conn.send(o);}catch(e){}}}
+function netCreate(tries){
+  if(!window.Peer){netStatus('Não consegui carregar o módulo do duelo online. Recarregue a página.',true);buildMenu();return;}
+  netReset();netStatus('');
+  const code=netCodeNew(),net=G.net={host:true,code,open:false,connected:false,offset:0,tries:tries||0};
+  const peer=net.peer=new Peer(NET_PREFIX+code,netOpts());
+  peer.on('open',()=>{if(G.net!==net)return;net.open=true;buildMenu();});
+  peer.on('connection',conn=>{
+    if(G.net!==net)return;
+    if(net.connected){conn.on('open',()=>{try{conn.send({t:'full'});}catch(e){}setTimeout(()=>{try{conn.close();}catch(e){}},800);});return;}
+    netAttach(net,conn);
+  });
+  peer.on('error',err=>netError(net,err));
+  peer.on('disconnected',()=>{if(G.net===net&&!net.connected){try{peer.reconnect();}catch(e){}}});
+  buildMenu();
+}
+function netJoin(raw){
+  const code=String(raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(code.length!==5){netStatus('O código da sala tem 5 letras ou números.',true);buildMenu();return;}
+  if(!window.Peer){netStatus('Não consegui carregar o módulo do duelo online. Recarregue a página.',true);buildMenu();return;}
+  netReset();netStatus('');
+  const net=G.net={host:false,code,open:false,connected:false,joining:true,offset:0};
+  const peer=net.peer=new Peer(netOpts());
+  peer.on('open',()=>{if(G.net!==net)return;net.open=true;netAttach(net,peer.connect(NET_PREFIX+code,{reliable:true}));});
+  peer.on('error',err=>netError(net,err));
+  net.joinTimer=setTimeout(()=>{if(G.net===net&&!net.connected){netReset();netStatus('Não consegui entrar na sala. Confira o código e se seu amigo ainda está com a sala aberta.',true);buildMenu();}},15000);
+  buildMenu();
+}
+function netError(net,err){
+  if(G.net!==net)return;
+  const ty=err&&err.type;
+  if(ty==='unavailable-id'&&net.host&&net.tries<3){netCreate(net.tries+1);return;}
+  if(net.connected&&ty!=='browser-incompatible')return;
+  const M={'peer-unavailable':'Não achei essa sala. Confira o código ou peça um novo para seu amigo.','network':'Não consegui falar com o servidor de salas. Confira a internet e tente de novo.','server-error':'O servidor de salas não respondeu. Tente de novo daqui a pouco.','socket-error':'A conexão com o servidor de salas caiu. Tente de novo.','socket-closed':'A conexão com o servidor de salas caiu. Tente de novo.','browser-incompatible':'Este navegador não suporta o duelo online. Tente o Chrome, Edge ou Firefox.','webrtc':'Sua rede bloqueou a conexão direta com seu amigo. Tente outra rede.'};
+  clearTimeout(net.joinTimer);netReset();netStatus(M[ty]||'A conexão falhou. Tente de novo.',true);buildMenu();
+}
+function netAttach(net,conn){
+  net.conn=conn;
+  conn.on('open',()=>{
+    if(G.net!==net)return;
+    clearTimeout(net.joinTimer);net.connected=true;net.joining=false;net.lobbyKey=null;net.sentDiff=null;
+    netSend({t:'hello',name:myName(),diff:G.diffs[0]});
+    if(net.host)netSendLobby();
+    netPing();clearInterval(net.pingIv);net.pingIv=setInterval(netPing,3000);
+    netStatus('');buildMenu();
+  });
+  conn.on('data',d=>{if(G.net===net)netOnData(d);});
+  conn.on('close',()=>{
+    if(G.net!==net||net.conn!==conn)return;
+    const was=net.connected;net.connected=false;net.conn=null;clearInterval(net.pingIv);
+    if(!was)return;
+    if(G.state==='play'&&G.players[0]){P=G.players[0];msg('SEU AMIGO SAIU','#e5383b');}
+    if(!$('results').hidden)renderOnlineResults();
+    if(net.host)netStatus((net.oppName||'Seu amigo')+' saiu da sala. A sala continua aberta.',true);
+    else{G.net=null;try{net.peer.destroy();}catch(e){}netStatus('A sala foi fechada.',true);}
+    buildMenu();
+  });
+  conn.on('error',()=>{});
+}
+function netPing(){netSend({t:'ping',a:performance.now()});}
+function songDesc(){const d=G.songDef;if(d.yt)return{kind:'yt',chart:d.chart};if(d.custom)return{kind:'file',name:G.custom?G.custom.name:''};return{kind:'gen',id:d.id};}
+function normChart(c){
+  if(!c||typeof c!=='object'||!/^[\w-]{11}$/.test(c.videoId)||!Array.isArray(c.notes)||!c.notes.length)throw new Error('chart');
+  return{id:String(c.id||'x').replace(/[^\w]/g,'').slice(0,20)||'x',videoId:c.videoId,title:String(c.title||'Música do YouTube').slice(0,120),dur:Math.max(0,num(c.dur)),
+    notes:c.notes.slice(0,20000).filter(n=>n&&Number.isFinite(+n.time)).map(n=>({time:Math.max(0,+n.time),lane:Math.max(0,Math.min(4,n.lane|0)),len:Math.max(0,num(n.len))}))};
+}
+function descToDef(s){
+  if(!s||typeof s!=='object')return null;
+  if(s.kind==='gen')return SONGS.find(x=>x.id===s.id)||null;
+  if(s.kind==='yt'){try{return ytDef(normChart(s.chart));}catch(e){return null;}}
+  return null;
+}
+function netSendLobby(){
+  const net=G.net;if(!net||!net.host||!net.connected)return;
+  const d=songDesc(),key=d.kind==='yt'?'yt:'+d.chart.id:d.kind+':'+(d.id||d.name);
+  if(net.lobbyKey!==key){net.lobbyKey=key;netSend({t:'lobby',song:d});}
+}
+function netHostStart(){
+  const net=G.net;if(!net||!net.host||!net.connected)return;
+  const d=songDesc();if(d.kind==='file')return;
+  const at=performance.now()+(d.kind==='yt'?5000:3000);
+  net.oppEnd=null;net.opp=null;
+  netSend({t:'start',song:d,at});
+  netStartLocal(d,at);
+}
+function netStartLocal(d,atLocal){
+  const def=descToDef(d);
+  if(!def){toMenu();menuNote('Não consegui abrir a música escolhida.',true);return;}
+  G.net.oppEnd=null;G.net.opp=null;G.myEnd=null;$('againBtn').disabled=false;
+  G.songDef=def;startGame(atLocal);
+}
+function netSendEnd(ok,quit){
+  if(!G.online||!G.net||!G.players[0])return;
+  const p=G.players[0];
+  netSend({t:'end',ok,quit,s:p.score,h:p.hits,n:p.notes.length,mc:p.maxCombo,out:p.out,diff:p.diff});
+}
+function netOnData(d){
+  const net=G.net;if(!d||typeof d!=='object')return;
+  switch(d.t){
+    case'hello':net.oppName=String(d.name||'Seu amigo').trim().slice(0,20)||'Seu amigo';net.oppDiff=DIFFS[d.diff]?d.diff:null;buildMenu();break;
+    case'diff':net.oppDiff=DIFFS[d.diff]?d.diff:null;if(!$('menu').hidden)buildMenu();break;
+    case'full':netReset();netStatus('Essa sala já tem dois jogadores.',true);buildMenu();break;
+    case'ping':netSend({t:'pong',a:d.a,b:performance.now()});break;
+    case'pong':{
+      const now=performance.now(),a=num(d.a),rtt=now-a;if(!(rtt>=0&&rtt<5000))break;
+      net.samples=(net.samples||[]).concat([[rtt,num(d.b)-(a+now)/2]]).slice(-10);
+      const best=net.samples.reduce((x,y)=>y[0]<x[0]?y:x);net.rtt=best[0];net.offset=net.host?0:best[1];
+      if(!$('menu').hidden)buildNetBox();break;
+    }
+    case'lobby':if(!net.host){net.hostSong=d.song;if(!$('menu').hidden)buildMenu();}break;
+    case'start':if(!net.host&&G.online){if(G.state==='play'||G.state==='record')break;show(null);netStartLocal(d.song,num(d.at)-net.offset);}break;
+    case'st':net.opp={s:num(d.s),c:num(d.c),m:num(d.m)||1,mt:Math.max(0,Math.min(1,num(d.mt))),sp:!!d.sp,o:!!d.o};break;
+    case'end':net.oppEnd={ok:!!d.ok,quit:!!d.quit,s:num(d.s),h:num(d.h),n:num(d.n),mc:num(d.mc),out:!!d.out,diff:DIFFS[d.diff]?d.diff:null};
+      net.opp=Object.assign(net.opp||{},{s:num(d.s),o:!!d.out});
+      if(!$('results').hidden&&G.myEnd)renderOnlineResults();break;
+  }
+}
+setInterval(()=>{
+  if(!G.online||G.state!=='play'||!G.net||!G.net.connected)return;
+  const p=G.players[0];if(!p)return;P=p;
+  netSend({t:'st',s:p.score,c:p.combo,m:mult(),mt:+p.meter.toFixed(3),sp:p.spActive,o:p.out});
+},120);
+function drawOpp(){
+  const net=G.net;if(!G.online||!net||(!net.connected&&!net.opp))return;
+  const o=net.opp||{s:0,c:0,m:1,mt:.5},me=G.players[0];
+  const w=Math.min(230,W*.46),h=86,x=W-w-14,y=(narrow?122:68);
+  c.save();c.fillStyle='rgba(10,5,12,.8)';c.strokeStyle='rgba(255,190,140,.25)';c.lineWidth=1;
+  c.beginPath();c.roundRect?c.roundRect(x,y,w,h,10):c.rect(x,y,w,h);c.fill();c.stroke();
+  c.textAlign='left';c.fillStyle='rgba(247,236,223,.65)';c.font='600 11px "Chakra Petch",sans-serif';
+  c.fillText(((net.oppName||'Seu amigo').toUpperCase()+(net.connected?'':' · SAIU')).slice(0,28),x+12,y+18);
+  c.fillStyle='#f7ecdf';c.font='700 22px "Chakra Petch",sans-serif';c.fillText(Math.round(o.s).toLocaleString('pt-BR'),x+12,y+43);
+  c.textAlign='right';c.font='700 13px "Chakra Petch",sans-serif';c.fillStyle=o.sp?'#7fe9ff':'#ffd23b';
+  c.fillText(net.oppEnd?'TERMINOU':o.o?'VAIADO':`×${o.m}${o.c>=5?' · '+o.c:''}`,x+w-12,y+43);
+  const bw=w-24;c.fillStyle='rgba(255,255,255,.1)';c.fillRect(x+12,y+52,bw,6);
+  c.fillStyle=o.mt<.33?'#e5383b':o.mt<.66?'#ffd23b':'#2fd35a';c.fillRect(x+12,y+52,bw*o.mt,6);
+  if(me){const d=me.score-Math.round(o.s);c.textAlign='left';c.font='600 11px "Chakra Petch",sans-serif';c.fillStyle=d>=0?'#2fd35a':'#ff8f8f';
+    c.fillText(d===0?'EMPATADOS':d>0?`VOCÊ NA FRENTE +${d.toLocaleString('pt-BR')}`:`VOCÊ ATRÁS ${d.toLocaleString('pt-BR')}`,x+12,y+76);}
+  c.restore();
+}
+function buildNetBox(){
+  const box=$('netInner'),net=G.net;
+  const status=G.netMsg?`<p class="${G.netMsg.bad?'err':'note'}" style="margin:0">${escH(G.netMsg.text)}</p>`:'';
+  if(!net){
+    box.innerHTML=`<div><h2><label for="netName">Seu nome</label></h2><input class="field" id="netName" maxlength="20" autocomplete="nickname" value="${escH(store.get('rr:name','')||'')}" placeholder="Jogador"></div>
+      <div class="row"><button class="btn primary" id="netCreateBtn">Criar sala</button></div>
+      <div class="row"><input class="field" id="netCode" maxlength="5" autocomplete="off" autocapitalize="characters" placeholder="Código da sala" value="${escH(G.netCodeDraft||'')}" aria-label="Código da sala"><button class="btn" id="netJoinBtn">Entrar</button></div>
+      <p>Um cria a sala e manda o código ou o link. O outro entra com o código. Cada um joga no próprio computador ou celular.</p>${status}`;
+    $('netName').oninput=e=>store.set('rr:name',e.target.value.slice(0,20));
+    $('netCode').oninput=e=>{G.netCodeDraft=e.target.value;};
+    $('netCode').onkeydown=e=>{if(e.key==='Enter')netJoin($('netCode').value);};
+    $('netCreateBtn').onclick=()=>netCreate(0);
+    $('netJoinBtn').onclick=()=>netJoin($('netCode').value);
+    return;
+  }
+  const leave=`<div class="row"><button class="btn" id="netLeave">${net.host?'Fechar sala':'Sair da sala'}</button></div>`;
+  if(net.connected){
+    const opp=escH(net.oppName||'Seu amigo'),od=net.oppDiff?DIFFS[net.oppDiff].label:'';
+    let song='';
+    if(net.host)song=G.songDef.custom?'<p>Músicas de arquivo não funcionam no duelo online. Escolha uma música da casa ou do YouTube.</p>':'<p>Escolha a música e aperte <b>Tocar</b>. A música começa ao mesmo tempo para os dois.</p>';
+    else{const def=descToDef(net.hostSong);song=`<p>${opp} escolhe a música${def?`: <b>${escH(def.name)}</b>`:''}. Escolha sua dificuldade e espere começar.</p>`;}
+    box.innerHTML=`<p>Conectado com <b>${opp}</b>${od?` (${escH(od)})`:''}${net.rtt!=null?` · atraso da conexão ${Math.round(net.rtt/2)} ms`:''}</p>${song}${leave}${status}`;
+  }else if(net.host){
+    const link=location.origin+location.pathname+'?sala='+net.code;
+    box.innerHTML=net.open?`<p>Sua sala</p><div class="roomcode">${net.code}</div><p>Mande o código ou o link para seu amigo e espere ele entrar.</p>
+      <div class="row"><input class="field" id="netLink" readonly value="${escH(link)}" aria-label="Link da sala"><button class="btn" id="netCopy">Copiar link</button></div>${leave}${status}`
+      :`<p>Criando a sala…</p>${leave}${status}`;
+    const cp=$('netCopy');if(cp)cp.onclick=()=>{const f=$('netLink');const ok=()=>{cp.textContent='Copiado';};try{navigator.clipboard.writeText(link).then(ok,()=>{f.focus();f.select();});}catch(e){f.focus();f.select();}};
+  }else box.innerHTML=`<p>Entrando na sala <b>${escH(net.code)}</b>…</p>${leave}${status}`;
+  $('netLeave').onclick=()=>{netReset();netStatus('');buildMenu();};
+}
+
 // ---------- menu ----------
 const fileIn=$('file');
 let loading=null;
 function fmtTime(s){s=Math.round(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
 function buildMenu(){
   const songs=$('songs');songs.innerHTML='';
+  const guest=G.online&&G.net&&G.net.connected&&!G.net.host;
+  if(guest){
+    const def=descToDef(G.net.hostSong),b=document.createElement('div');b.className='song locked';b.setAttribute('aria-pressed','true');
+    const hs=G.net.hostSong;
+    b.innerHTML=def?`<span class="nm">${escH(def.name)}</span><span class="meta">Escolhida por ${escH(G.net.oppName||'seu amigo')}</span><span class="tier"><b>${def.yt?'▶':'♪'}</b>${def.yt?'YouTube':'da casa'}</span>`
+      :`<span class="nm">${hs&&hs.kind==='file'?'Música de arquivo':'Aguardando a escolha'}</span><span class="meta">${hs&&hs.kind==='file'?'Não funciona online. Peça para escolher outra.':escH(G.net.oppName||'Seu amigo')+' ainda não escolheu a música.'}</span>`;
+    songs.appendChild(b);
+  }else{
   const bestOf=id=>Math.max(...Object.keys(DIFFS).map(d=>store.get(`rr:best:${id}:${d}`,0)));
   for(const s of SONGS){
     const b=document.createElement('button');b.className='song';b.setAttribute('aria-pressed',s===G.songDef);
@@ -1031,9 +1273,12 @@ function buildMenu(){
   yb.innerHTML=`<span class="nm">Música do YouTube</span><span class="meta">Cole um link, toque junto e grave o chart. Também dá para importar o código de um amigo.</span><span class="tier"><b>+</b>gravar</span>`;
   yb.onclick=()=>{loadYTApi().catch(()=>{});ytErr('');show('ytPanel');buildRates();$('ytUrl').focus();};
   songs.appendChild(yb);
+  }
 
   const pl=$('players');pl.innerHTML='';
-  [[1,'1 jogador'],[2,'2 jogadores']].forEach(([n,l])=>{const b=document.createElement('button');b.textContent=l;b.setAttribute('aria-pressed',G.nPlayers===n);b.onclick=()=>{G.nPlayers=n;savePrefs();buildMenu();};pl.appendChild(b);});
+  [[1,'Sozinho'],[2,'2 no mesmo PC'],['online','Online']].forEach(([n,l])=>{const b=document.createElement('button');b.textContent=l;b.setAttribute('aria-pressed',n==='online'?G.online:(!G.online&&G.nPlayers===n));
+    b.onclick=()=>{if(n==='online'){G.online=true;G.nPlayers=1;}else{G.online=false;G.nPlayers=n;netReset();netStatus('');}savePrefs();buildMenu();};pl.appendChild(b);});
+  $('netBox').hidden=!G.online;if(G.online)buildNetBox();
   const dd=$('diffs');dd.innerHTML='';
   for(let i=0;i<G.nPlayers;i++){
     const row=document.createElement('div');row.className='seg';
@@ -1050,8 +1295,15 @@ function buildMenu(){
     ?`<span>Jogador 1: ${kc(LABELS[0])} e <kbd>Espaço</kbd></span><span>Jogador 2: ${kc(LABELS[1])} e <kbd>Enter</kbd></span><span><kbd>Esc</kbd> pausa</span><span>No celular ou tablet, cada um toca na sua metade da tela.</span>`
     :`<span>${kc(LABELS[0])} trastes</span><span><kbd>Enter</kbd><kbd>↑</kbd><kbd>↓</kbd> palhetar</span><span><kbd>Espaço</kbd> Poder Estelar</span><span><kbd>Esc</kbd> pausa</span><span>No celular, toque nas pistas.</span>`;
   $('offset').value=G.offset;$('offVal').textContent=G.offset+' ms';
-  $('playBtn').disabled=!!(G.songDef.custom&&(!G.custom||loading));
-  if(G.songDef.yt)loadYTApi().catch(()=>{});
+  const pb=$('playBtn');pb.textContent='Tocar';
+  pb.disabled=!!(G.songDef.custom&&(!G.custom||loading));
+  if(G.online){
+    const net=G.net;
+    if(!net||!net.connected)pb.disabled=true;
+    else if(!net.host){pb.disabled=true;pb.textContent='Esperando '+(net.oppName||'seu amigo');}
+    else{if(G.songDef.custom)pb.disabled=true;netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netSend({t:'diff',diff:G.diffs[0]});}}
+  }
+  if(G.songDef.yt||(G.online&&G.net&&G.net.hostSong&&G.net.hostSong.kind==='yt'))loadYTApi().catch(()=>{});
 }
 function menuNote(t,bad){const n=$('menuNote');n.textContent=t;n.className=bad?'err':'note';n.hidden=false;}
 function ytErr(t){const e=$('ytErr');e.textContent=t;e.hidden=!t;}
@@ -1078,9 +1330,10 @@ fileIn.onchange=async()=>{
   }
   buildMenu();
 };
-window.__rrAnalyze=analyze;window.__rrYT=YTP;
+window.__rrAnalyze=analyze;window.__rrYT=YTP;window.__rrNet=()=>G.net;
 $('offset').oninput=e=>{G.offset=+e.target.value;$('offVal').textContent=G.offset+' ms';savePrefs();};
-$('playBtn').onclick=startGame;
+$('playBtn').onclick=()=>{if(G.online){if(G.net&&G.net.connected&&G.net.host)netHostStart();return;}startGame();};
+{const q=new URLSearchParams(location.search).get('sala');if(q){G.online=true;G.nPlayers=1;G.netCodeDraft=q;try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>netJoin(q),0);}}
 buildMenu();
 requestAnimationFrame(frame);
 })();

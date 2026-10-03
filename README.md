@@ -1,12 +1,13 @@
 # Riff Relâmpago
 
-Jogo de ritmo no navegador, no estilo Guitar Hero, para 1 ou 2 jogadores.
+Jogo de ritmo no navegador, no estilo Guitar Hero, para jogar sozinho, em dupla no mesmo computador ou em duelo online.
 
 - 3 músicas originais compostas pelo próprio jogo.
 - Carregue um arquivo de música seu (MP3, WAV, OGG) e o jogo cria as notas sozinho.
+- Duelo online: um cria a sala e manda o código ou o link, o outro entra de outro computador. A conexão é direta entre os dois navegadores (WebRTC com [PeerJS](https://peerjs.com)).
 - Grave o chart de uma música do YouTube tocando junto com o vídeo, e compartilhe o chart com amigos por um código.
 
-Tudo roda no navegador, em um único arquivo `index.html`. Nenhuma música com direitos autorais vem junto com o jogo.
+Tudo roda no navegador, em `index.html` mais a biblioteca PeerJS em `vendor/` (licença MIT, em `vendor/PEERJS-LICENSE`). Nenhuma música com direitos autorais vem junto com o jogo.
 
 ## Controles
 
