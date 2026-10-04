@@ -1472,7 +1472,7 @@ function descToDef(s){
   if(!s||typeof s!=='object')return null;
   if(s.kind==='gen')return SONGS.find(x=>x.id===s.id)||null;
   if(s.kind==='yt'){try{return ytDef(normChart(s.chart));}catch(e){return null;}}
-  if(s.kind==='lib'){const m=LIB.list.find(x=>x.id===s.hash);return m?libDef(m):null;}
+  if(s.kind==='lib'){const m=libFind(s.hash);return m?libDef(m):null;}
   return null;
 }
 function netSendLobby(){
@@ -1484,7 +1484,7 @@ function netSendLobby(){
 function netLibHave(){
   const net=G.net;if(!G.online||!net||net.host||!net.connected)return;
   const hs=net.hostSong;if(!hs||hs.kind!=='lib'){net.sentHave=null;return;}
-  const key=descKey(hs),m=LIB.list.find(x=>x.id===hs.hash);
+  const key=descKey(hs),m=libFind(hs.hash);
   let st;
   if(!m)st={ok:false,why:'missing'};
   else if(G.lib&&G.lib.id===m.id)st={ok:true,why:''};
@@ -1606,7 +1606,7 @@ function buildNetBox(){
     const def=descToDef(hs),hn=escH(netHostName(net));
     body=`<p>Na sala <b>${escH(net.code)}</b>${net.rtt!=null?` · atraso ${Math.round(net.rtt/2)} ms`:''}:</p>${list}<p>${hn} escolhe a música${def?`: <b>${escH(def.name)}</b>`:hs&&hs.kind==='lib'?`: <b>${escH(hs.name)}</b>`:''}. Escolha sua dificuldade e espere começar.</p>`;
     if(lib){
-      const m=LIB.list.find(x=>x.id===hs.hash);
+      const m=libFind(hs.hash);
       if(!m)body+=`<p class="err" style="margin:0">Você não tem esse chart${hs.artist?` (${escH(hs.artist)} - ${escH(hs.name)})`:''} na biblioteca. Importe o mesmo arquivo para jogar.</p><div class="row"><button class="btn" id="netImport">Importar chart</button></div>`;
       else if(LIB.err&&LIB.err.id===m.id&&LIB.err.perm)body+=`<div class="row"><button class="btn primary" id="netPerm">Liberar a pasta do Clone Hero</button></div>`;
     }
@@ -1614,7 +1614,7 @@ function buildNetBox(){
   box.innerHTML=body+leave+status;
   const cp=$('netCopy');if(cp)cp.onclick=()=>{const f=$('netLink'),link=f.value;const ok=()=>{cp.textContent='Copiado';};try{navigator.clipboard.writeText(link).then(ok,()=>{f.focus();f.select();});}catch(e){f.focus();f.select();}};
   const im=$('netImport');if(im)im.onclick=()=>{chartErrT('');if(!chartBusy)chartMsgT('');show('chartPanel');};
-  const pm=$('netPerm');if(pm)pm.onclick=()=>{const m=LIB.list.find(x=>x.id===hs.hash);if(m){LIB.err=null;libEnsure(m,true).catch(()=>{});}};
+  const pm=$('netPerm');if(pm)pm.onclick=()=>{const m=libFind(hs.hash);if(m){LIB.err=null;libEnsure(m,true).catch(()=>{});}};
   $('netLeave').onclick=()=>{netReset();netStatus('');buildMenu();};
 }
 
@@ -1628,7 +1628,7 @@ function buildMenu(){
   if(guest){
     const def=descToDef(G.net.hostSong),b=document.createElement('div');b.className='song locked';b.setAttribute('aria-pressed','true');
     const hs=G.net.hostSong,hn=escH(netHostName(G.net));
-    b.innerHTML=def?`<span class="nm">${escH(def.name)}</span><span class="meta">${def.lib&&def.meta.artist?escH(def.meta.artist)+' · ':''}Escolhida por ${hn}</span><span class="tier"><b>${def.yt?'▶':'♪'}</b>${def.yt?'YouTube':def.lib?'biblioteca':'da casa'}</span>`
+    b.innerHTML=def?`<span class="nm">${escH(def.name)}</span><span class="meta">${def.lib&&def.meta.artist?escH(def.meta.artist)+' · ':''}Escolhida por ${hn}</span><span class="tier"><b>${def.yt?'▶':'♪'}</b>${def.yt?'YouTube':def.lib?(def.meta.house?'da casa':'biblioteca'):'da casa'}</span>`
       :hs&&hs.kind==='lib'?`<span class="nm">${escH(String(hs.name||'Música da biblioteca').slice(0,120))}</span><span class="meta">${hs.artist?escH(String(hs.artist).slice(0,80))+' · ':''}Você não tem esse chart. Importe o mesmo arquivo em "Chart pronto" para jogar.</span>`
       :`<span class="nm">${hs&&hs.kind==='file'?'Música de arquivo':'Aguardando a escolha'}</span><span class="meta">${hs&&hs.kind==='file'?'Não funciona online. Peça para escolher outra.':hn+' ainda não escolheu a música.'}</span>`;
     songs.appendChild(b);
@@ -1643,8 +1643,14 @@ function buildMenu(){
     b.onclick=()=>{G.songDef=s;savePrefs();buildMenu();};
     songs.appendChild(b);
   }
-  const u=document.createElement('button');u.className='song upload';u.setAttribute('aria-pressed',G.songDef===CUSTOM);
   const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+  for(const m of LIB.house){
+    const b=document.createElement('button');b.className='song';b.setAttribute('aria-pressed',!!(G.songDef.lib&&G.songDef.meta.id===m.id));
+    const best=bestOf('lib:'+m.id),ld=LIB.loading&&LIB.loading.id===m.id,er=LIB.err&&LIB.err.id===m.id?LIB.err.msg:'';
+    b.innerHTML=`<span class="nm">${esc(m.name)}</span><span class="meta">${er?`<span class="bad">${esc(er)}</span>`:[m.artist&&esc(m.artist),m.dur&&fmtTime(m.dur),m.charter&&'chart de '+esc(m.charter)].filter(Boolean).join(' · ')||'Música da casa'}</span><span class="tier"><b>♪</b>${ld?'carregando…':best?'recorde '+best.toLocaleString('pt-BR'):'sem recorde'}</span>`;
+    b.onclick=()=>libSelect(m);songs.appendChild(b);
+  }
+  const u=document.createElement('button');u.className='song upload';u.setAttribute('aria-pressed',G.songDef===CUSTOM);
   if(loading)u.innerHTML=`<span class="nm">${esc(loading.name)}</span><span class="meta">${loading.err?esc(loading.err):'Ouvindo a música e criando as notas… '+Math.round(loading.p*100)+'%'}</span>`;
   else if(G.custom)u.innerHTML=`<span class="nm">${esc(G.custom.name)}</span><span class="meta">Sua música · cerca de ${Math.round(G.custom.an.bpm)} BPM · ${fmtTime(G.custom.an.dur)}</span><span class="tier"><b>♪</b>notas automáticas</span>`;
   else u.innerHTML=`<span class="nm">Carregar sua música</span><span class="meta">Escolha um MP3, WAV ou OGG do seu aparelho. O jogo escuta a faixa e cria as notas.</span><span class="tier"><b>+</b>arquivo</span>`;
@@ -1790,7 +1796,8 @@ fileIn.onchange=async()=>{
   buildMenu();
 };
 // ---------- biblioteca de músicas (fica salva neste navegador) ----------
-const LIB={list:[],dbP:null,loading:null,err:null,filter:'',restored:false};
+const LIB={list:[],house:[],dbP:null,loading:null,err:null,filter:'',restored:false};
+const libFind=id=>LIB.house.find(x=>x.id===id)||LIB.list.find(x=>x.id===id);
 let chartBusy=false;
 function chartMsgT(t){const m=$('chartMsg');m.textContent=t;m.hidden=!t;}
 function chartErrT(t){const m=$('chartErr');m.textContent=t;m.hidden=!t;}
@@ -1880,6 +1887,7 @@ function sumInto(a,b){
 }
 async function libLoad(m,gesture,job){
   const live=()=>{if(job&&LIB.loading!==job)throw new Error('cancel');};
+  if(m.house)return houseSong(m,live);
   let data=LIB.mem&&LIB.mem[m.id];
   if(!data){try{data=await idbGet('data',m.id);}catch(e){data=null;}}
   if(!data)throw new Error('gone');
@@ -1891,6 +1899,9 @@ async function libLoad(m,gesture,job){
     if(data.src==='dirsng'){let f;try{f=await (await d.getFileHandle(data.file)).getFile();}catch(e){throw new Error('gone');}files=parseSng(await f.arrayBuffer()).files;}
     else files=data.stems.map(n=>({name:n,ab:async()=>(await (await d.getFileHandle(n)).getFile()).arrayBuffer()}));
   }else files=data.stems.map(s=>({name:s.name,ab:()=>s.blob.arrayBuffer()}));
+  return decodeStems(m,data.chart,files,live);
+}
+async function decodeStems(m,chart,files,live){
   let mix=null,gtr=null;
   for(const f of files.filter(f=>isStem(f.name))){
     live();let buf;try{buf=await decodeAB(await f.ab());}catch(e){continue;}
@@ -1899,7 +1910,7 @@ async function libLoad(m,gesture,job){
   }
   live();if(!mix&&!gtr)throw new Error('decode');
   const stems=[];if(mix)stems.push({buffer:mix,guitar:false});if(gtr)stems.push({buffer:gtr,guitar:true});
-  return{id:m.id,name:m.name,chart:data.chart,stems,buffer:mix||gtr,dur:Math.max(...stems.map(s=>s.buffer.duration))};
+  return{id:m.id,name:m.name,chart,stems,buffer:mix||gtr,dur:Math.max(...stems.map(s=>s.buffer.duration))};
 }
 function libErrText(e){const m=e&&e.message;return m==='perm'?'O navegador precisa da sua permissão para ler a pasta do Clone Hero. Toque na música e aceite.':m==='gone'?'Não achei os arquivos dessa música. Se ela veio da pasta do Clone Hero, procure músicas na pasta de novo.':m==='decode'?'Este navegador não conseguiu tocar o áudio dessa música. Tente o Chrome ou o Edge.':'Não consegui abrir essa música.';}
 function libEnsure(m,gesture,quiet){
@@ -1927,6 +1938,32 @@ async function libRemove(m){
   if(G.songDef.lib&&G.songDef.meta.id===m.id){G.songDef=SONGS[0];savePrefs();}
   buildMenu();
 }
+// ---------- músicas da casa ----------
+// Ficam na pasta musicas/ do site (só quem pode mexer no repositório adiciona). A lista musicas/lista.json é gerada sozinha.
+const housePath=p=>typeof p==='string'&&p&&p.length<300&&!p.split('/').some(x=>!x||x==='.'||x==='..'||/[\\:]/.test(x));
+const houseURL=p=>'musicas/'+p.split('/').map(encodeURIComponent).join('/');
+async function houseList(){
+  let j=null;try{const r=await fetch('musicas/lista.json',{cache:'no-cache'});if(r.ok)j=await r.json();}catch(e){}
+  const arr=j&&Array.isArray(j.musicas)?j.musicas:[];
+  LIB.house=arr.slice(0,300).filter(x=>x&&typeof x==='object'&&housePath(x.caminho)&&(/\.sng$/i.test(x.caminho)||Array.isArray(x.arquivos))).map(x=>({
+    id:'casa:'+x.caminho,house:true,path:x.caminho,sng:/\.sng$/i.test(x.caminho),files:Array.isArray(x.arquivos)?x.arquivos.filter(n=>typeof n==='string'&&housePath(n)&&!n.includes('/')).slice(0,40):[],
+    name:String(x.nome||x.caminho.split('/').pop().replace(/\.sng$/i,'')).slice(0,120),artist:String(x.artista||'').slice(0,80),charter:String(x.charter||'').replace(/<[^>]*>/g,'').slice(0,60),
+    dur:Math.max(0,num(x.duracao)),diffs:[]}));
+  const m=typeof sel.song==='string'&&LIB.house.find(x=>'lib:'+x.id===sel.song);
+  if(m&&G.state==='menu'&&G.songDef===SONGS[0]&&!G.online){G.songDef=libDef(m);libEnsure(m,false,true).catch(()=>{});}
+  if(G.state==='menu'&&!$('menu').hidden)buildMenu();
+  netLibHave();
+}
+async function houseSong(m,live){
+  const get=async u=>{let r;try{r=await fetch(u);}catch(e){throw new Error('net');}if(!r.ok)throw new Error('gone');return r.arrayBuffer();};
+  let files,info=null;
+  if(m.sng){const pk=parseSng(await get(houseURL(m.path)));files=pk.files;info=pk.meta;}
+  else files=m.files.map(n=>({name:n,ab:()=>get(houseURL(m.path+'/'+n))}));
+  live();
+  const s=await songFromEntries(files,info);
+  applyDelay(s.chart,s.info.delay);m.diffs=Object.keys(s.chart.diffs);
+  return decodeStems(m,s.chart,files,live);
+}
 // ---------- importar charts ----------
 function chartErrText(e){const m=e&&e.message;return m==='nonotes'?'Esse chart não tem notas de guitarra.':m==='nochart'?'Faltou o arquivo do chart (notes.chart, notes.mid ou um pacote .sng).':m==='noaudio'?'Faltou o áudio. Escolha também o song.ogg, os stems ou o MP3 da música.':m==='decode'?'Não consegui ler o áudio. Tente OGG, OPUS, MP3 ou WAV no Chrome ou Edge.':m==='quota'?'O navegador ficou sem espaço para guardar mais músicas.':m==='format'?'Esse arquivo não é um pacote .sng válido.':'Não consegui ler esse chart. Use .sng, notes.chart ou notes.mid.';}
 const fileEntry=f=>({name:f.name,ab:()=>f.arrayBuffer()});
@@ -1947,7 +1984,7 @@ async function importFolderFiles(files,dirInfo){
 function importDone(added,failed,firstErr){
   chartBusy=false;chartMsgT('');
   libRefresh().then(()=>{
-    if(G.songDef.lib&&!LIB.list.some(x=>x.id===G.songDef.meta.id)){if(G.lib&&G.lib.id===G.songDef.meta.id)G.lib=null;G.songDef=SONGS[0];savePrefs();if(G.state==='menu')buildMenu();}
+    if(G.songDef.lib&&!G.songDef.meta.house&&!LIB.list.some(x=>x.id===G.songDef.meta.id)){if(G.lib&&G.lib.id===G.songDef.meta.id)G.lib=null;G.songDef=SONGS[0];savePrefs();if(G.state==='menu')buildMenu();}
     if(!added.length){chartErrT(chartErrText(firstErr));return;}
     if(G.state!=='menu'||$('chartPanel').hidden)return;
     const one=added.length===1?added[0]:null;
@@ -2046,7 +2083,7 @@ window.__rrChart={parseChartText,parseMidi,parseSng,chartHash};window.__rrLib=LI
 window.__rrAnalyze=analyze;window.__rrYT=YTP;window.__rrNet=()=>G.net;
 $('offset').oninput=e=>{G.offset=+e.target.value;$('offVal').textContent=G.offset+' ms';savePrefs();};
 $('playBtn').onclick=()=>{if(G.online){if(G.net&&G.net.connected&&G.net.host)netHostStart();return;}if(G.songDef.lib&&!curCustom()){const m=G.songDef.meta;libEnsure(m,true).then(()=>{if(G.state==='menu'&&G.songDef.lib&&G.songDef.meta.id===m.id)startGame();},()=>{});return;}startGame();};
-libRefresh();
+libRefresh();houseList();
 {const q=new URLSearchParams(location.search).get('sala');if(q){G.online=true;G.nPlayers=1;G.netCodeDraft=q;try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>netJoin(q),0);}}
 buildMenu();
 requestAnimationFrame(frame);

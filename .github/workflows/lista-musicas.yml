@@ -1,0 +1,26 @@
+# Quando alguém sobe ou apaga músicas na pasta musicas/, atualiza musicas/lista.json para o menu do jogo.
+name: Lista de músicas
+on:
+  push:
+    branches: [main]
+    paths: ['musicas/**', '!musicas/lista.json', 'ferramentas/lista-musicas.mjs']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  lista:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node ferramentas/lista-musicas.mjs
+      - name: Salvar a lista
+        run: |
+          git add musicas/lista.json
+          if git diff --cached --quiet; then echo "lista sem mudanças"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Atualiza a lista de músicas"
+          git push

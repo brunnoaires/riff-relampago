@@ -8,6 +8,7 @@ Jogo de ritmo no navegador, no estilo Guitar Hero, para jogar sozinho, em dupla 
 - Grave o chart de uma música do YouTube tocando junto com o vídeo, e compartilhe o chart com amigos por um código.
 - Ou crie o chart de uma música do YouTube automaticamente a partir do seu próprio MP3 dela: o jogo analisa o arquivo e você marca quando a música começa no vídeo para sincronizar.
 - Importe charts feitos à mão (notes.chart ou notes.mid do Moonscraper / Clone Hero), com as 4 dificuldades e o Poder Estelar do chart, tocando com o áudio da música (stems como guitar.ogg incluídos) ou com um vídeo do YouTube.
+- Músicas da casa: o que estiver na pasta `musicas/` deste repositório (pacotes .sng ou pastas do Clone Hero) aparece no menu para todo mundo. Veja [musicas/LEIA-ME.md](musicas/LEIA-ME.md).
 - Biblioteca de músicas: escolha a sua pasta de músicas do Clone Hero (ou arquivos .sng) e todas entram no menu, guardadas no seu navegador. Para tocar uma delas online, cada jogador importa o mesmo chart na própria biblioteca.
 
 Tudo roda no navegador, em `index.html` mais a biblioteca PeerJS em `vendor/` (licença MIT, em `vendor/PEERJS-LICENSE`). Nenhuma música com direitos autorais vem junto com o jogo.
