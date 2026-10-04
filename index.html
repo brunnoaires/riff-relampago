@@ -598,6 +598,7 @@ function initAudio(){
   buses.dry=G_(1);buses.dry.connect(mg);
   buses.fx=G_(.6);buses.fx.connect(master);
   noiseBuf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  setTimeout(()=>{if(!thunderBuf){const[Ld,Rd]=thunderData(AC.sampleRate,7);thunderBuf=AC.createBuffer(2,Ld.length,AC.sampleRate);thunderBuf.getChannelData(0).set(Ld);thunderBuf.getChannelData(1).set(Rd);}},0);
 }
 function osc(type,f,t,dest,dur){const o=AC.createOscillator();o.type=type;o.frequency.setValueAtTime(f,t);o.connect(dest);o.start(t);o.stop(t+dur);return o;}
 function env(t,peak,dur,dest,attack=.004){const g=AC.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+attack);g.gain.exponentialRampToValueAtTime(.0001,t+dur);g.connect(dest);return g;}
@@ -620,6 +621,46 @@ const SYN={
 };
 function sfxMiss(){if(!AC)return;const t=AC.currentTime;const g=env(t,.5,.18,buses.fx);const o=osc('square',92,t,g,.2);o.frequency.linearRampToValueAtTime(70,t+.15);const o2=osc('sawtooth',131,t,g,.2);o2.detune.value=40;noise(t,'bandpass',400,1,.12,.3,buses.fx);}
 function sfxCrowd(t,dur,vol,boo,dest){const s=AC.createBufferSource();s.buffer=noiseBuf;s.loop=true;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=boo?350:1300;f.Q.value=boo?1.4:.6;const g=AC.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+dur*.25);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(dest||master);s.start(t);s.stop(t+dur+.1);}
+// trovão curto (estalo + estrondo grave que rola 2 vezes, ~1,4 s), gerado na hora: nenhum arquivo de som
+function thunderData(sr,seed){
+  let s=seed|0||1;const rnd=()=>{s^=s<<13;s^=s>>>17;s^=s<<5;return((s>>>0)/4294967296)*2-1;};
+  const n=Math.round(sr*1.5),L=new Float32Array(n),R=new Float32Array(n);
+  // filtro passa-faixa (biquad) para o corpo médio do trovão
+  const bq=(f0,Q)=>{const w=2*Math.PI*f0/sr,al=Math.sin(w)/(2*Q),a0=1+al;const b0=al/a0,b2=-al/a0,a1=-2*Math.cos(w)/a0,a2=(1-al)/a0;let x1=0,x2=0,y1=0,y2=0;return x=>{const y=b0*x+b2*x2-a1*y1-a2*y2;x2=x1;x1=x;y2=y1;y1=y;return y;};};
+  const bpL=bq(220,.9),bpR=bq(220,.9);
+  const bump=(t,c,w)=>{const z=(t-c)/w;return Math.exp(-z*z);};
+  // estalos do raio nos primeiros 120 ms
+  const clicks=[];for(let i=0;i<9;i++)clicks.push([Math.abs(rnd())*.12,.4+Math.abs(rnd())*.6]);
+  let bl=0,br=0,lp1=0,lp2=0,hpPrev=0,hpOut=0,crl=0,ma=0,mb=0,mc=0,md=0;
+  const ka=Math.exp(-2*Math.PI*900/sr),kz=Math.exp(-2*Math.PI*180/sr),kb=Math.exp(-2*Math.PI*230/sr),kc=Math.exp(-2*Math.PI*1800/sr),kh=Math.exp(-2*Math.PI*900/sr);
+  for(let i=0;i<n;i++){
+    const t=i/sr,w1=rnd(),w2=rnd();
+    // ruído marrom (grave) para o estrondo
+    bl=bl*.996+w1*.06;br=br*.996+w2*.06;
+    lp1=lp1*kb+bl*(1-kb);lp2=lp2*kb+br*(1-kb);
+    const att=Math.min(1,t/.025),rumble=att*(Math.exp(-t/.42)*.9+.55*bump(t,.32,.09)+.35*bump(t,.62,.12)+.12*bump(t,.95,.15))*Math.min(1,(1.5-t)/.25);
+    // estalo: ruído claro e rápido
+    hpOut=kh*(hpOut+w1-hpPrev);hpPrev=w1;crl=crl*kc+hpOut*(1-kc);
+    let crack=Math.exp(-t/.035)*1.1+Math.exp(-t/.16)*.25;
+    for(const[c0,a]of clicks){const d=t-c0;if(d>=0&&d<.012)crack+=a*Math.exp(-d/.003);}
+    // meio: o "rasgado" que rola junto com o estrondo
+    ma=ma*ka+w1*(1-ka);mb=mb*kz+w1*(1-kz);mc=mc*ka+w2*(1-ka);md=md*kz+w2*(1-kz);
+    const mid=(Math.exp(-t/.09)*.9+rumble*.5);
+    const sub=Math.sin(2*Math.PI*(55*t-9*t*t))*Math.exp(-t/.3)*Math.min(1,t/.01)*.3;
+    const bodyL=bpL(w1)*rumble*20,bodyR=bpR(w2)*rumble*20;
+    L[i]=bodyL+lp1*rumble*9+(ma-mb)*mid*2+crl*crack*1.8+sub;R[i]=bodyR+lp2*rumble*9+(mc-md)*mid*2+crl*crack*1.6+sub;
+  }
+  let pk=0;for(let i=0;i<n;i++)pk=Math.max(pk,Math.abs(L[i]),Math.abs(R[i]));
+  const g=.95/pk;for(let i=0;i<n;i++){L[i]*=g;R[i]*=g;}
+  return[L,R];
+}
+let thunderBuf=null;
+function sfxThunder(){
+  if(!AC)return;
+  if(!thunderBuf){const[Ld,Rd]=thunderData(AC.sampleRate,1+Math.floor(Math.random()*1e6));thunderBuf=AC.createBuffer(2,Ld.length,AC.sampleRate);thunderBuf.getChannelData(0).set(Ld);thunderBuf.getChannelData(1).set(Rd);}
+  const t=AC.currentTime,s=AC.createBufferSource(),g=AC.createGain();s.buffer=thunderBuf;s.playbackRate.value=.94+Math.random()*.14;g.gain.value=1.1;s.connect(g);g.connect(buses.fx);s.start(t);
+}
+window.__rrSfx={thunder:sfxThunder,data:thunderData};
 function sfxStar(){const t=AC.currentTime;const g=env(t,.4,.9,buses.fx,.05);const o=osc('sawtooth',300,t,g,1);o.frequency.exponentialRampToValueAtTime(1600,t+.7);const o2=osc('sine',600,t,g,1);o2.frequency.exponentialRampToValueAtTime(2400,t+.7);sfxCrowd(t,2.2,.35);}
 function setMute(on){
   if(!AC)return;P.muted=on;
@@ -869,7 +910,7 @@ function hitNote(n,t){
   const err=Math.abs(n.time-t);
   pushText(err<.035?'PERFEITO':err<.07?'ÓTIMO':'BOM');
   if(n.len>0){n.holding=true;n.susT=n.time;P.holds.push(n);}
-  if(n.star>=0){const ph=P.phrases[n.star];ph.hit++;if(ph.hit===ph.total&&!ph.broken){P.energy=Math.min(1,P.energy+.25);msg('FRASE ESTELAR!','#9feeff');}}
+  if(n.star>=0){const ph=P.phrases[n.star];ph.hit++;if(ph.hit===ph.total&&!ph.broken){P.energy=Math.min(1,P.energy+.25);msg('FRASE ESTELAR!','#9feeff');sfxThunder();G.flashAt=performance.now()/1000;}}
   if(P.combo>0&&P.combo%50===0)msg(P.combo+' NOTAS SEGUIDAS!','#ffd23b');
   if(P.combo===10||P.combo===20||P.combo===30)pushText('×'+multBase(),true);
 }
@@ -1206,6 +1247,9 @@ function drawBG(now,beatPh,excite,sp){
   const menu=G.state==='menu',pulse=Math.pow(1-beatPh,3);
   if(G.song&&G.song.yt&&!$('yt').hidden){c.clearRect(0,0,W,H);c.fillStyle='rgba(14,8,16,.62)';c.fillRect(0,0,W,H);stageBuild();}
   else drawStage(now,beatPh,excite,sp,menu,pulse);
+  // relâmpago: o palco pisca duas vezes quando entra Poder Estelar
+  const fd=now-(G.flashAt||-9);
+  if(fd>=0&&fd<.45){const k=(fd<.06||(fd>.11&&fd<.17))?1:.3;c.globalCompositeOperation='lighter';c.fillStyle=`rgba(185,215,255,${(.3*k*(1-fd/.45)).toFixed(3)})`;c.fillRect(0,0,W,H);c.globalCompositeOperation='source-over';}
   drawCrowd(now,beatPh,excite,menu);
 }
 
