@@ -89,6 +89,16 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
 .statgrid b{display:block;font-size:1.25rem;font-variant-numeric:tabular-nums}
 .statgrid span{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .versus{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.rank{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;text-align:left}
+.rank li{display:grid;grid-template-columns:2.4em 1fr auto;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid transparent}
+.rank li.me{background:rgba(255,138,31,.1)}.rank li.win{border-color:#ffd23b}
+.rank .pos{font:700 1rem var(--ui);color:var(--muted)}.rank li.win .pos{color:#ffd23b}
+.rank .who{min-width:0;overflow:hidden;text-overflow:ellipsis}.rank .who small{display:block;color:var(--muted);font-size:.78rem;line-height:1.4}
+.rank .sc{font:700 1.15rem var(--ui);font-variant-numeric:tabular-nums}
+.roster{list-style:none;margin:4px 0 8px;padding:0;display:flex;flex-direction:column;gap:3px;font-size:.9rem}
+.roster .ok{color:#2fd35a}.roster .bad,.song .bad{color:#ff8f8f}.roster .muted{color:var(--muted)}
+.libhead{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:10px 0 2px}
+.libsearch{margin:0 0 4px}
 .versus>div{padding:14px 8px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid transparent}
 .versus>div.win{border-color:#ffd23b;background:rgba(255,210,59,.08)}
 .versus .who{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
@@ -125,7 +135,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
       </div>
       <div class="col">
         <div><h2>Jogadores</h2><div id="players" class="seg"></div></div>
-        <div id="netBox" hidden><h2>Duelo online</h2><div id="netInner" class="net"></div></div>
+        <div id="netBox" hidden><h2>Sala online</h2><div id="netInner" class="net"></div></div>
         <div><h2>Dificuldade</h2><div id="diffs"></div></div>
         <div id="modeBox"><h2>Modo</h2><div id="modes" class="seg"></div><p class="hint" id="modeHint"></p></div>
         <div><h2><label for="offset">Atraso do áudio</label><span id="offVal">0 ms</span></h2><input type="range" id="offset" min="-150" max="150" step="5" value="0"><p class="hint">Se as notas parecerem adiantadas em relação ao som, aumente.</p></div>
@@ -177,22 +187,26 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
 
 <section id="chartPanel" class="overlay" hidden>
   <div class="panel small yt-panel">
-    <p class="eyebrow">Charts feitos à mão</p>
+    <p class="eyebrow">Biblioteca</p>
     <h1>Chart pronto</h1>
-    <p class="lede">Use charts do Moonscraper ou do Clone Hero: arquivos <b>notes.chart</b> ou <b>notes.mid</b>. O jogo lê as 4 dificuldades e as frases de Poder Estelar.</p>
-    <h2>Com o áudio da música</h2>
-    <p class="hint">Abra a pasta da música e escolha o chart e o áudio juntos (song.ogg, guitar.ogg, MP3…). Dá para selecionar todos de uma vez. Se tiver guitar.ogg, a guitarra some quando você erra, como no Guitar Hero.</p>
-    <div class="stack"><button class="btn primary" id="chartFilesBtn">Escolher chart e áudio</button></div>
+    <p class="lede">Use músicas do Clone Hero ou charts feitos no Moonscraper: pacotes <b>.sng</b> ou pastas com <b>notes.chart</b> / <b>notes.mid</b> e o áudio. Elas ficam salvas no menu deste navegador.</p>
+    <h2>Pasta Songs do Clone Hero</h2>
+    <p class="hint">Escolha a pasta de músicas do seu Clone Hero e o jogo coloca todas na biblioteca de uma vez. No Chrome e no Edge ele só lê a pasta, sem copiar nada. Se tiver guitar.ogg, a guitarra some quando você erra.</p>
+    <div class="stack"><button class="btn primary" id="chartDirBtn">Escolher a pasta de músicas</button><button class="btn" id="chartRescanBtn">Procurar músicas novas na pasta</button></div>
+    <h2>Uma música</h2>
+    <p class="hint">Escolha um ou vários pacotes .sng, ou os arquivos de uma pasta (o chart, o song.ini e o áudio, todos de uma vez).</p>
+    <div class="stack"><button class="btn" id="chartFilesBtn">Escolher arquivos</button></div>
     <hr class="sep">
     <h2><label for="chartUrl">Com um vídeo do YouTube</label></h2>
-    <p class="hint">Funciona online e dá para mandar o código para um amigo. Cole o link do vídeo com a mesma música e escolha só o chart. Depois o vídeo toca e você aperta um traste na primeira nota do chart, para acertar a sincronia.</p>
+    <p class="hint">Para quem não tem o áudio: cole o link do vídeo com a mesma música e escolha só o chart (ou o .sng). Depois o vídeo toca e você aperta um traste na primeira nota do chart, para acertar a sincronia.</p>
     <input class="field" id="chartUrl" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
     <div class="stack"><button class="btn" id="chartYTBtn">Escolher chart para o vídeo</button></div>
     <p class="note" id="chartMsg" hidden></p>
     <p class="err" id="chartErr" hidden></p>
     <div class="stack"><button class="btn" id="chartBack">Voltar ao menu</button></div>
     <input type="file" id="chartFiles" multiple hidden>
-    <input type="file" id="chartOnly" accept=".chart,.mid,.midi" hidden>
+    <input type="file" id="chartDir" webkitdirectory multiple hidden>
+    <input type="file" id="chartOnly" accept=".chart,.mid,.midi,.sng" hidden>
   </div>
 </section>
 
@@ -461,7 +475,7 @@ function parseChartText(txt){
     b.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\s*=\s*([NS])\s+(\d+)\s+(\d+)/);if(!m)return;const tick=+m[1],a=+m[3],len=+m[4];
       if(m[2]==='N'&&a<=4)notes[dk].push({tick,lane:a,len});else if(m[2]==='S'&&a===2)sp[dk].push({tick,len});});
   }
-  return finishChart({res,tempos,notes,sp,offset:+kv.Offset||0,name:kv.Name,artist:kv.Artist});
+  return finishChart({res,tempos,notes,sp,offset:0,name:kv.Name,artist:kv.Artist}); // o Clone Hero ignora o Offset do .chart (usa o delay do song.ini)
 }
 function parseMidi(ab){
   const d=new DataView(ab),L=d.byteLength;let p=0;
@@ -661,7 +675,7 @@ function decodeChart(s){
 }
 
 // ---------- estado ----------
-const G={online:false,net:null,netMsg:null,state:'menu',paused:false,song:null,songDef:SONGS[0],players:[],nPlayers:1,diffs:['medium','medium'],mode:'tap',offset:0,custom:null,src:null};
+const G={online:false,net:null,netMsg:null,state:'menu',paused:false,song:null,songDef:SONGS[0],players:[],nPlayers:1,diffs:['medium','medium'],mode:'tap',offset:0,custom:null,lib:null,netLast:null,src:null};
 let P=null; // jogador da vez
 window.__rr=G;G.songT=()=>songT();
 const sel=store.get('rr:prefs',{});
@@ -672,7 +686,7 @@ if(MODES[sel.mode])G.mode=sel.mode;
 if(sel.n===2)G.nPlayers=2;
 if(sel.n==='online')G.online=true;
 if(typeof sel.offset==='number')G.offset=sel.offset;
-const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset});
+const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset});
 
 function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0};}
 function songT(){
@@ -683,21 +697,23 @@ function stopSource(){if(G.src){for(const s of[].concat(G.src)){try{s.stop();}ca
 async function startGame(startAt){
   if(typeof startAt!=='number')startAt=0;
   if(loading&&!loading.err)return;
-  if(G.songDef.custom&&!G.custom)return;
-  if(G.online&&G.songDef.custom)return;
+  const cur=curCustom();
+  if(G.songDef.custom&&!cur)return;
+  if(G.online&&G.songDef.custom&&!G.songDef.lib)return;
+  if(!G.net)G.netLast=null;
   const NP=G.online?1:G.nPlayers;
   if(G.songDef.yt)return startYT(startAt,NP);
   initAudio();
   if(AC.state==='suspended')AC.resume();
   stopSource();
   const custom=!!G.songDef.custom;
-  const cc=custom&&G.custom.chart;
-  G.song=cc?{custom:true,spb:.5,bpm:120,beat0:0,beats:cc.beats,events:[],endTime:Math.max(G.custom.dur,cc.last+2)+.5}
-    :custom?{custom:true,spb:G.custom.an.spb,bpm:G.custom.an.bpm,beat0:G.custom.an.beat0,events:[],endTime:G.custom.buffer.duration+.5}:generateSong(G.songDef);
+  const cc=custom&&cur.chart;
+  G.song=cc?{custom:true,spb:.5,bpm:120,beat0:0,beats:cc.beats,events:[],endTime:Math.max(cur.dur,cc.last+2)+.5}
+    :custom?{custom:true,spb:cur.an.spb,bpm:cur.an.bpm,beat0:cur.an.beat0,events:[],endTime:cur.buffer.duration+.5}:generateSong(G.songDef);
   G.players=[];
   for(let i=0;i<NP;i++){
     const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');
-    const ch=cc?chartForPlay(cc.diffs,cc.sp,pl.diff,0):custom?buildCustomChart(G.custom.an,pl.diff):buildChart(G.song,pl.diff);
+    const ch=cc?chartForPlay(cc.diffs,cc.sp,pl.diff,0):custom?buildCustomChart(cur.an,pl.diff):buildChart(G.song,pl.diff);
     pl.notes=ch.notes;pl.phrases=ch.phrases;G.players.push(pl);
   }
   Object.assign(G,{state:'play',paused:false,sched:0});
@@ -712,7 +728,7 @@ async function startGame(startAt){
   G.startTime=startAt?now+(startAt-performance.now())/1000:now+(custom?2.4:1.2);
   master.gain.setValueAtTime(.85,Math.max(now+.3,Math.min(G.startTime-.05,now+.6)));
   if(custom){
-    const stems=G.custom.stems||[{buffer:G.custom.buffer,guitar:true}],anyG=stems.some(x=>x.guitar);
+    const stems=cur.stems||[{buffer:cur.buffer,guitar:true}],anyG=stems.some(x=>x.guitar);
     G.src=stems.map(x=>{const s=AC.createBufferSource();s.buffer=x.buffer;s.connect(x.guitar||!anyG?buses.muffle:buses.dry);s.start(G.startTime);return s;});
   }
   show(null);
@@ -1086,7 +1102,7 @@ function drawHUD(now,t){
   c.globalAlpha=1;
   if(P.out){const e=boardW/2*1.16,pF=pz(ZMAX),pN=pz(-.5),yF=yAt(pF),yN=yAt(pN);c.fillStyle='rgba(8,4,10,.6)';c.beginPath();c.moveTo(CX-e*pF,yF);c.lineTo(CX+e*pF,yF);c.lineTo(CX+e*pN,yN+20);c.lineTo(CX-e*pN,yN+20);c.closePath();c.fill();c.fillStyle='#e5383b';c.font=`400 ${Math.min(44,boardW*.14)}px "Metal Mania",Impact,sans-serif`;c.fillText('VAIADO',CX,H*.55);}
   if(t<0){c.fillStyle='rgba(255,255,255,.85)';c.font=`400 ${Math.min(64,(x1-x0)*.11)}px "Metal Mania",Impact,sans-serif`;c.fillText(two?`JOGADOR ${P.i+1}`:'PREPARE-SE',CX,H*.4);}
-  if(P.i===0&&G.online)drawOpp();
+  if(P.i===0&&G.online)drawBoard();
 }
 
 let lastFrame=performance.now();
@@ -1187,7 +1203,7 @@ function togglePause(){
   if(G.state!=='play'&&G.state!=='record')return;
   if(G.online&&G.state==='play'){
     if($('pause').hidden){
-      $('resumeBtn').textContent='Voltar ao jogo';$('quitBtn').textContent='Sair do duelo';
+      $('resumeBtn').textContent='Voltar ao jogo';$('quitBtn').textContent='Sair da música';
       $('restartBtn').hidden=true;$('saveRecBtn').hidden=true;
       show('pause');$('pause').querySelector('h1').textContent='A música continua';$('resumeBtn').focus();
     }else{show(null);pauseBtn.hidden=false;}
@@ -1224,7 +1240,7 @@ $('againBtn').onclick=()=>{if(G.online&&G.net&&G.net.connected){if(G.net.host)ne
 $('menuBtn').onclick=toMenu;
 
 function results(ok){
-  const name=G.songDef.custom?G.custom.name:G.songDef.name;
+  const cur=curCustom(),name=G.songDef.custom&&cur?cur.name:G.songDef.name;
   if(G.song.yt&&YTP.player&&ok)setTimeout(()=>{try{YTP.player.pauseVideo();}catch(e){}},1500);
   const body=$('resBody');$('againBtn').disabled=false;
   if(G.online&&G.net&&G.players.length===1){
@@ -1235,7 +1251,7 @@ function results(ok){
   if(G.players.length===1){
     P=G.players[0];
     const total=P.notes.length,pct=total?Math.round(P.hits/total*100):0;
-    const key=`rr:best:${G.songDef.custom?'custom:'+G.custom.name:G.songDef.id}:${P.diff}`,best=store.get(key,0);
+    const key=`rr:best:${G.songDef.lib?G.songDef.id:G.songDef.custom?'custom:'+(cur?cur.name:''):G.songDef.id}:${P.diff}`,best=store.get(key,0);
     let record=false;if(ok&&P.score>best){store.set(key,P.score);record=true;}
     const ratio=P.score/Math.max(1,total*50),stars=ok?(ratio>=2.8?5:ratio>=2?4:ratio>=1.4?3:ratio>=.8?2:1):0;
     $('resEyebrow').textContent=`${name} · ${P.D.label}`;
@@ -1255,64 +1271,133 @@ function results(ok){
 }
 
 function renderOnlineResults(){
-  const net=G.net,me=G.players[0];if(!me)return;
-  const name=G.songDef.name,oppName=(net&&net.oppName)||'Seu amigo',o=net&&net.oppEnd,live=net&&net.opp;
-  const pct=(h,n)=>n?Math.round(h/n*100):0;
-  const mine={who:'Você · '+me.D.label,s:me.score,ln:`${pct(me.hits,me.notes.length)}% das notas<br>sequência de ${me.maxCombo}${me.out?'<br>foi vaiado':''}`};
-  let opp,done=!!o;
-  if(o)opp={who:escH(oppName)+(o.diff&&DIFFS[o.diff]?' · '+DIFFS[o.diff].label:''),s:o.s,ln:o.quit?'saiu antes do fim':`${pct(o.h,o.n)}% das notas<br>sequência de ${o.mc}${o.out?'<br>foi vaiado':''}`};
-  else opp={who:escH(oppName),s:live?live.s:0,ln:net&&net.connected?'ainda tocando…':'saiu da sala'};
-  if(!o&&!(net&&net.connected))done=true;
-  const win=!done?-2:(o&&o.quit&&!me.out)?0:(mine.s===opp.s?-1:(mine.s>opp.s?0:1));
-  $('resEyebrow').textContent=`${name} · duelo online`;
-  $('resTitle').textContent=!done?`Esperando ${oppName} terminar…`:win<0?'Empate!':win===0?(o&&o.quit?`${oppName} desistiu`:'Você venceu!'):`${oppName} venceu`;
-  $('resBody').innerHTML=`<div class="versus">${[mine,opp].map((p,i)=>`<div class="${i===win?'win':''}"><div class="who">${p.who}</div><div class="sc">${(+p.s||0).toLocaleString('pt-BR')}</div><div class="ln">${p.ln}</div></div>`).join('')}</div>`;
-  const ab=$('againBtn');
-  if(net&&net.connected){ab.textContent=!net.host?'Esperando '+oppName+' começar':o?'Jogar de novo com '+oppName:'Esperando '+oppName+' terminar';ab.disabled=!net.host||!o;}
+  const net=G.net||G.netLast,me=G.players[0];if(!me||!net)return;
+  const name=G.songDef.name,pct=(h,n)=>n?Math.round(h/n*100):0;
+  const rows=netSongPlayers(net).map(p=>{
+    const mine=p.id===net.myId,e=mine?G.myEnd&&{ok:G.myEnd.ok,quit:false,s:me.score,h:me.hits,n:me.notes.length,mc:me.maxCombo,out:me.out,diff:me.diff}:net.ends[p.id];
+    const gone=!mine&&!netIsHere(net,p.id),live=!mine&&net.live[p.id];
+    const s=e?e.s:mine?me.score:live?live.s:0;
+    const status=e?(e.quit?2:e.out?1:0):gone?2:-1; // -1 ainda tocando, 0 terminou, 1 vaiado, 2 saiu
+    const ln=status===-1?'ainda tocando…':status===2?'saiu antes do fim':`${pct(e.h,e.n)}% das notas · sequência de ${e.mc}${e.out?' · vaiado':''}`;
+    return{mine,name:mine?'Você':p.name,diff:e&&DIFFS[e.diff]?DIFFS[e.diff].label:'',s,status,ln};
+  });
+  const waiting=rows.filter(r=>r.status===-1).length;
+  rows.sort((a,b)=>(a.status===2)-(b.status===2)||(a.status===1)-(b.status===1)||b.s-a.s);
+  const mi=rows.findIndex(r=>r.mine),tie=rows.length>1&&rows[0].s===rows[1].s&&rows[0].status===rows[1].status;
+  $('resEyebrow').textContent=`${name} · sala online`;
+  $('resTitle').textContent=waiting?`Esperando ${waiting===1?'1 jogador':waiting+' jogadores'} terminar…`:rows.length<2?'Você terminou':mi===0?(tie?'Empate no topo!':'Você venceu!'):`Você ficou em ${mi+1}º lugar`;
+  $('resBody').innerHTML=`<ol class="rank">${rows.map((r,i)=>`<li class="${r.mine?'me':''}${i===0&&!waiting&&rows.length>1?' win':''}"><span class="pos">${i+1}º</span><span class="who"><b>${escH(r.name)}</b>${r.diff?` · ${escH(r.diff)}`:''}<small>${r.ln}</small></span><span class="sc">${(+r.s||0).toLocaleString('pt-BR')}</span></li>`).join('')}</ol>`;
+  const ab=$('againBtn'),on=G.net&&G.net.connected;
+  if(on){const hn=netHostName(G.net);ab.textContent=!G.net.host?'Esperando '+hn+' começar':waiting?'Esperando todos terminarem':'Jogar de novo com a sala';ab.disabled=!G.net.host||!!waiting;}
   else{ab.textContent='Tocar sozinho';ab.disabled=false;}
 }
 
-// ---------- online ----------
-const NET_PREFIX='riffrelampago-v1-';
+// ---------- online: salas com até 8 jogadores ----------
+// O criador da sala é o centro: recebe tudo de cada amigo e repassa para os outros.
+const NET_PREFIX='riffrelampago-v1-',NET_MAX=8;
 const escH=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const num=v=>Number.isFinite(+v)?+v:0;
+const cleanName=v=>String(v==null?'':v).replace(/[\u0000-\u001f]/g,'').trim().slice(0,20)||'Jogador';
 function netCodeNew(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';const r=new Uint32Array(5);crypto.getRandomValues(r);for(let i=0;i<5;i++)s+=A[r[i]%A.length];return s;}
 function myName(){return String(store.get('rr:name','')||'').trim().slice(0,20)||'Jogador';}
 function netStatus(text,bad){G.netMsg=text?{text,bad:!!bad}:null;}
 function netOpts(){return Object.assign({debug:0},window.RR_PEER_OPTS||{});}
+const menuOpen=()=>!$('menu').hidden;
 function netReset(){
   const n=G.net;G.net=null;
   if(!n)return;
-  clearInterval(n.pingIv);
-  try{if(n.conn)n.conn.close();}catch(e){}
-  try{if(n.peer)n.peer.destroy();}catch(e){}
+  clearInterval(n.pingIv);clearInterval(n.helloIv);clearTimeout(n.joinTimer);
+  const conns=n.host?[...n.peers.values()].filter(p=>p.connected).map(p=>p.conn):[n.connected&&n.conn];
+  for(const c of conns)netSendTo(c,{t:n.host?'closed':'bye'});
+  setTimeout(()=>{for(const c of conns){try{if(c)c.close();}catch(e){}}try{if(n.peer)n.peer.destroy();}catch(e){}},300);
 }
-function netSend(o){const n=G.net;if(n&&n.conn&&n.connected){try{n.conn.send(o);}catch(e){}}}
+function netSendTo(conn,o){try{if(conn)conn.send(o);}catch(e){}}
+// convidado: manda para o criador. Criador: manda para todos (menos 'skip').
+function netSend(o,skip){
+  const n=G.net;if(!n)return;
+  if(n.host){for(const p of n.peers.values())if(p.connected&&p.id!==skip)netSendTo(p.conn,o);}
+  else if(n.conn&&n.connected)netSendTo(n.conn,o);
+}
+function netIsHere(net,id){return id===net.myId||(net.host?!!(net.peers.get(id)&&net.peers.get(id).connected):(net.connected&&net.roster.some(p=>p.id===id)));}
+function netHostName(net){const h=net.roster.find(p=>p.id==='h');return h?h.name:'quem criou a sala';}
+function netSongPlayers(net){return net.inSong&&net.inSong.length?net.inSong:net.roster;}
+function netNew(host,code){return{host,code,open:false,connected:false,offset:0,myId:host?'h':null,roster:[],live:{},ends:{},inSong:null,peers:new Map(),seq:0,samples:[]};}
 function netCreate(tries){
-  if(!window.Peer){netStatus('Não consegui carregar o módulo do duelo online. Recarregue a página.',true);buildMenu();return;}
+  if(!window.Peer){netStatus('Não consegui carregar o módulo do jogo online. Recarregue a página.',true);buildMenu();return;}
   netReset();netStatus('');
-  const code=netCodeNew(),net=G.net={host:true,code,open:false,connected:false,offset:0,tries:tries||0};
+  const code=netCodeNew(),net=G.net=netNew(true,code);net.tries=tries||0;
+  netRoster(net);
   const peer=net.peer=new Peer(NET_PREFIX+code,netOpts());
   peer.on('open',()=>{if(G.net!==net)return;net.open=true;buildMenu();});
   peer.on('connection',conn=>{
     if(G.net!==net)return;
-    if(net.connected){conn.on('open',()=>{try{conn.send({t:'full'});}catch(e){}setTimeout(()=>{try{conn.close();}catch(e){}},800);});return;}
-    netAttach(net,conn);
+    const n=[...net.peers.values()].filter(p=>p.connected).length;
+    if(n>=NET_MAX-1){conn.on('open',()=>{netSendTo(conn,{t:'full'});setTimeout(()=>{try{conn.close();}catch(e){}},800);});return;}
+    netHostAttach(net,conn);
   });
   peer.on('error',err=>netError(net,err));
-  peer.on('disconnected',()=>{if(G.net===net&&!net.connected){try{peer.reconnect();}catch(e){}}});
+  peer.on('disconnected',()=>{if(G.net===net){try{peer.reconnect();}catch(e){}}});
   buildMenu();
+}
+function netRoster(net){
+  net.roster=[{id:'h',name:myName(),diff:G.diffs[0]}].concat([...net.peers.values()].filter(p=>p.connected&&p.hello).map(p=>({id:p.id,name:p.name,diff:p.diff})));
+  net.connected=net.roster.length>1;
+  netSend({t:'roster',players:net.roster});
+}
+function netHostAttach(net,conn){
+  const pl={id:'p'+(++net.seq),conn,connected:false,hello:false,name:'Jogador',diff:null,have:null,samples:[]};
+  net.peers.set(pl.id,pl);
+  conn.on('open',()=>{if(G.net!==net)return;pl.connected=true;pl.seen=performance.now();netEnsurePing(net);});
+  conn.on('data',d=>{if(G.net===net){pl.seen=performance.now();netHostData(net,pl,d);}});
+  conn.on('close',()=>netDropPeer(net,pl));
+  conn.on('error',()=>{});
+}
+// alguém saiu (fechou a conexão, avisou ou parou de responder)
+function netDropPeer(net,pl){
+  if(G.net!==net||!net.peers.has(pl.id))return;
+  const was=pl.connected&&pl.hello;pl.connected=false;net.peers.delete(pl.id);
+  try{pl.conn.close();}catch(e){}
+  if(!was)return;
+  netRoster(net);netSend({t:'left',id:pl.id});
+  if(G.state==='play'&&net.inSong&&net.inSong.some(p=>p.id===pl.id)&&G.players[0]){P=G.players[0];msg(pl.name.toUpperCase()+' SAIU','#e5383b');}
+  netStatus(pl.name+' saiu da sala.',true);
+  if(!$('results').hidden)renderOnlineResults();
+  if(menuOpen())buildMenu();
 }
 function netJoin(raw){
   const code=String(raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(code.length!==5){netStatus('O código da sala tem 5 letras ou números.',true);buildMenu();return;}
-  if(!window.Peer){netStatus('Não consegui carregar o módulo do duelo online. Recarregue a página.',true);buildMenu();return;}
+  if(!window.Peer){netStatus('Não consegui carregar o módulo do jogo online. Recarregue a página.',true);buildMenu();return;}
   netReset();netStatus('');
-  const net=G.net={host:false,code,open:false,connected:false,joining:true,offset:0};
+  const net=G.net=netNew(false,code);net.joining=true;
   const peer=net.peer=new Peer(netOpts());
-  peer.on('open',()=>{if(G.net!==net)return;net.open=true;netAttach(net,peer.connect(NET_PREFIX+code,{reliable:true}));});
+  peer.on('open',()=>{if(G.net!==net)return;net.open=true;netGuestAttach(net,peer.connect(NET_PREFIX+code,{reliable:true}));});
   peer.on('error',err=>netError(net,err));
-  net.joinTimer=setTimeout(()=>{if(G.net===net&&!net.connected){netReset();netStatus('Não consegui entrar na sala. Confira o código e se seu amigo ainda está com a sala aberta.',true);buildMenu();}},15000);
+  net.joinTimer=setTimeout(()=>{if(G.net===net&&!net.connected){netReset();netStatus('Não consegui entrar na sala. Confira o código e se a sala ainda está aberta.',true);buildMenu();}},15000);
+  buildMenu();
+}
+function netGuestAttach(net,conn){
+  net.conn=conn;
+  conn.on('open',()=>{
+    if(G.net!==net)return;
+    clearTimeout(net.joinTimer);net.connected=true;net.joining=false;net.sentDiff=G.diffs[0];net.sentHave=null;net.seen=performance.now();
+    const hello=()=>{if(G.net===net&&net.connected&&!net.myId)netSend({t:'hello',name:myName(),diff:G.diffs[0]});};
+    hello();let tries=0;net.helloIv=setInterval(()=>{if(net.myId||++tries>6||G.net!==net)clearInterval(net.helloIv);else hello();},1500);
+    netEnsurePing(net);netStatus('');buildMenu();
+  });
+  conn.on('data',d=>{if(G.net===net){net.seen=performance.now();netGuestData(net,d);}});
+  conn.on('close',()=>{if(net.conn===conn)netGuestLost(net);});
+  conn.on('error',()=>{});
+}
+function netGuestLost(net){
+  if(G.net!==net)return;
+  const was=net.connected;net.connected=false;clearInterval(net.pingIv);clearInterval(net.helloIv);
+  try{if(net.conn)net.conn.close();}catch(e){}net.conn=null;
+  if(!was)return;
+  if(G.state==='play'&&G.players[0]){P=G.players[0];msg('A SALA FOI FECHADA','#e5383b');}
+  G.netLast=net;G.net=null;try{net.peer.destroy();}catch(e){}
+  netStatus('A sala foi fechada.',true);
+  if(!$('results').hidden)renderOnlineResults();
   buildMenu();
 }
 function netError(net,err){
@@ -1320,34 +1405,61 @@ function netError(net,err){
   const ty=err&&err.type;
   if(ty==='unavailable-id'&&net.host&&net.tries<3){netCreate(net.tries+1);return;}
   if(net.connected&&ty!=='browser-incompatible')return;
-  const M={'peer-unavailable':'Não achei essa sala. Confira o código ou peça um novo para seu amigo.','network':'Não consegui falar com o servidor de salas. Confira a internet e tente de novo.','server-error':'O servidor de salas não respondeu. Tente de novo daqui a pouco.','socket-error':'A conexão com o servidor de salas caiu. Tente de novo.','socket-closed':'A conexão com o servidor de salas caiu. Tente de novo.','browser-incompatible':'Este navegador não suporta o duelo online. Tente o Chrome, Edge ou Firefox.','webrtc':'Sua rede bloqueou a conexão direta com seu amigo. Tente outra rede.'};
-  clearTimeout(net.joinTimer);netReset();netStatus(M[ty]||'A conexão falhou. Tente de novo.',true);buildMenu();
+  if(net.host&&net.open&&ty==='peer-unavailable')return;
+  const M={'peer-unavailable':'Não achei essa sala. Confira o código ou peça um novo.','network':'Não consegui falar com o servidor de salas. Confira a internet e tente de novo.','server-error':'O servidor de salas não respondeu. Tente de novo daqui a pouco.','socket-error':'A conexão com o servidor de salas caiu. Tente de novo.','socket-closed':'A conexão com o servidor de salas caiu. Tente de novo.','browser-incompatible':'Este navegador não suporta o jogo online. Tente o Chrome, Edge ou Firefox.','webrtc':'Sua rede bloqueou a conexão direta. Tente outra rede.'};
+  netReset();netStatus(M[ty]||'A conexão falhou. Tente de novo.',true);buildMenu();
 }
-function netAttach(net,conn){
-  net.conn=conn;
-  conn.on('open',()=>{
-    if(G.net!==net)return;
-    clearTimeout(net.joinTimer);net.connected=true;net.joining=false;net.lobbyKey=null;net.sentDiff=null;
-    netSend({t:'hello',name:myName(),diff:G.diffs[0]});
-    if(net.host)netSendLobby();
-    netPing();clearInterval(net.pingIv);net.pingIv=setInterval(netPing,3000);
-    netStatus('');buildMenu();
-  });
-  conn.on('data',d=>{if(G.net===net)netOnData(d);});
-  conn.on('close',()=>{
-    if(G.net!==net||net.conn!==conn)return;
-    const was=net.connected;net.connected=false;net.conn=null;clearInterval(net.pingIv);
-    if(!was)return;
-    if(G.state==='play'&&G.players[0]){P=G.players[0];msg('SEU AMIGO SAIU','#e5383b');}
-    if(!$('results').hidden)renderOnlineResults();
-    if(net.host)netStatus((net.oppName||'Seu amigo')+' saiu da sala. A sala continua aberta.',true);
-    else{G.net=null;try{net.peer.destroy();}catch(e){}netStatus('A sala foi fechada.',true);}
-    buildMenu();
-  });
-  conn.on('error',()=>{});
-}
+function netEnsurePing(net){if(net.pingIv)return;netPing();net.pingIv=setInterval(()=>{if(G.net!==net){clearInterval(net.pingIv);return;}netPing();netCheckAlive(net);},2000);}
 function netPing(){netSend({t:'ping',a:performance.now()});}
-function songDesc(){const d=G.songDef;if(d.yt)return{kind:'yt',chart:d.chart};if(d.custom)return{kind:'file',name:G.custom?G.custom.name:''};return{kind:'gen',id:d.id};}
+// quem fica 9 segundos sem mandar nada saiu (fechou a aba, caiu a internet)
+function netCheckAlive(net){
+  const now=performance.now();
+  if(net.host){for(const pl of[...net.peers.values()])if(pl.connected&&now-(pl.seen||now)>9000)netDropPeer(net,pl);}
+  else if(net.connected&&now-(net.seen||now)>10000)netGuestLost(net);
+}
+addEventListener('pagehide',()=>{const n=G.net;if(!n)return;netSend(n.host?{t:'closed'}:{t:'bye'});});
+function cleanSt(d){d=d&&typeof d==='object'?d:{};return{s:num(d.s),c:num(d.c),m:Math.max(1,Math.min(8,num(d.m)||1)),mt:Math.max(0,Math.min(1,num(d.mt))),sp:!!d.sp,o:!!d.o};}
+function cleanEnd(d){return{ok:!!d.ok,quit:!!d.quit,s:num(d.s),h:num(d.h),n:num(d.n),mc:num(d.mc),out:!!d.out,diff:DIFFS[d.diff]?d.diff:null};}
+function cleanPlayers(a){return Array.isArray(a)?a.slice(0,NET_MAX).filter(p=>p&&typeof p==='object').map(p=>({id:String(p.id).slice(0,8),name:cleanName(p.name),diff:DIFFS[p.diff]?p.diff:null})):[];}
+function netHostData(net,pl,d){
+  if(!d||typeof d!=='object')return;
+  switch(d.t){
+    case'hello':pl.name=cleanName(d.name);pl.diff=DIFFS[d.diff]?d.diff:null;pl.hello=true;netSendTo(pl.conn,{t:'welcome',id:pl.id});netSendTo(pl.conn,{t:'lobby',song:songDesc()});netRoster(net);if(menuOpen())buildMenu();break;
+    case'bye':netDropPeer(net,pl);break;
+    case'diff':pl.diff=DIFFS[d.diff]?d.diff:null;netRoster(net);if(menuOpen())buildMenu();break;
+    case'ping':netSendTo(pl.conn,{t:'pong',a:d.a,b:performance.now()});break;
+    case'pong':{const now=performance.now(),rtt=now-num(d.a);if(rtt>=0&&rtt<5000){pl.rtt=pl.rtt==null?rtt:pl.rtt*.7+rtt*.3;}break;}
+    case'have':pl.have={key:String(d.key||'').slice(0,40),ok:!!d.ok,why:String(d.why||'').slice(0,10)};if(menuOpen())buildMenu();break;
+    case'st':if(pl.hello)net.live[pl.id]=cleanSt(d);break;
+    case'end':{if(!pl.hello)break;const e=cleanEnd(d);net.ends[pl.id]=e;netSend(Object.assign({t:'end',id:pl.id},e),pl.id);if(!$('results').hidden)renderOnlineResults();break;}
+  }
+}
+function netGuestData(net,d){
+  if(!d||typeof d!=='object')return;
+  switch(d.t){
+    case'welcome':net.myId=String(d.id).slice(0,8);break;
+    case'roster':net.roster=cleanPlayers(d.players);if(menuOpen())buildMenu();if(!$('results').hidden)renderOnlineResults();break;
+    case'full':netReset();netStatus('Essa sala já está cheia (8 jogadores).',true);buildMenu();break;
+    case'closed':netGuestLost(net);break;
+    case'ping':netSend({t:'pong',a:d.a,b:performance.now()});break;
+    case'pong':{
+      const now=performance.now(),a=num(d.a),rtt=now-a;if(!(rtt>=0&&rtt<5000))break;
+      net.samples=net.samples.concat([[rtt,num(d.b)-(a+now)/2]]).slice(-10);
+      const best=net.samples.reduce((x,y)=>y[0]<x[0]?y:x);net.rtt=best[0];net.offset=best[1];
+      if(menuOpen())buildNetBox();break;
+    }
+    case'lobby':net.hostSong=d.song&&typeof d.song==='object'?d.song:null;netLibHave();if(menuOpen())buildMenu();break;
+    case'start':
+      if(G.state==='play'||G.state==='record')break;
+      net.inSong=cleanPlayers(d.players);net.ends={};net.live={};
+      show(null);netStartLocal(d.song,num(d.at)-net.offset);break;
+    case'sts':if(d.l&&typeof d.l==='object'){const o={};for(const k of Object.keys(d.l).slice(0,NET_MAX))o[k.slice(0,8)]=cleanSt(d.l[k]);net.live=o;}break;
+    case'end':{const id=String(d.id).slice(0,8);if(id===net.myId)break;net.ends[id]=cleanEnd(d);if(!$('results').hidden)renderOnlineResults();break;}
+    case'left':if(G.state==='play'&&net.inSong&&G.players[0]){const p=net.inSong.find(x=>x.id===String(d.id));if(p){P=G.players[0];msg(p.name.toUpperCase()+' SAIU','#e5383b');}}break;
+  }
+}
+function songDesc(){const d=G.songDef;if(d.yt)return{kind:'yt',chart:d.chart};if(d.lib)return{kind:'lib',hash:d.meta.id,name:d.meta.name,artist:d.meta.artist||''};if(d.custom)return{kind:'file',name:G.custom?G.custom.name:''};return{kind:'gen',id:d.id};}
+const descKey=d=>!d?'':d.kind==='yt'?'yt:'+(d.chart&&d.chart.id):d.kind==='lib'?'lib:'+d.hash:d.kind+':'+(d.id||d.name||'');
 function normChart(c){
   if(!c||typeof c!=='object'||!/^[\w-]{11}$/.test(c.videoId)||!Array.isArray(c.notes)||!c.notes.length)throw new Error('chart');
   return{id:String(c.id||'x').replace(/[^\w]/g,'').slice(0,20)||'x',videoId:c.videoId,title:String(c.title||'Música do YouTube').slice(0,120),dur:Math.max(0,num(c.dur)),
@@ -1358,73 +1470,94 @@ function descToDef(s){
   if(!s||typeof s!=='object')return null;
   if(s.kind==='gen')return SONGS.find(x=>x.id===s.id)||null;
   if(s.kind==='yt'){try{return ytDef(normChart(s.chart));}catch(e){return null;}}
+  if(s.kind==='lib'){const m=LIB.list.find(x=>x.id===s.hash);return m?libDef(m):null;}
   return null;
 }
 function netSendLobby(){
-  const net=G.net;if(!net||!net.host||!net.connected)return;
-  const d=songDesc(),key=d.kind==='yt'?'yt:'+d.chart.id:d.kind+':'+(d.id||d.name);
+  const net=G.net;if(!net||!net.host)return;
+  const d=songDesc(),key=descKey(d);
   if(net.lobbyKey!==key){net.lobbyKey=key;netSend({t:'lobby',song:d});}
 }
+// convidado: avisa o criador se já tem a música da biblioteca escolhida
+function netLibHave(){
+  const net=G.net;if(!G.online||!net||net.host||!net.connected)return;
+  const hs=net.hostSong;if(!hs||hs.kind!=='lib'){net.sentHave=null;return;}
+  const key=descKey(hs),m=LIB.list.find(x=>x.id===hs.hash);
+  let st;
+  if(!m)st={ok:false,why:'missing'};
+  else if(G.lib&&G.lib.id===m.id)st={ok:true,why:''};
+  else if(LIB.loading&&LIB.loading.id===m.id)st={ok:false,why:'loading'};
+  else if(LIB.err&&LIB.err.id===m.id)st={ok:false,why:LIB.err.perm?'perm':'error'};
+  else{st={ok:false,why:'loading'};libEnsure(m,false).catch(()=>{});}
+  const sk=key+'|'+st.ok+'|'+st.why;
+  if(net.sentHave!==sk){net.sentHave=sk;netSend(Object.assign({t:'have',key},st));}
+}
+function netAllHave(net,d){
+  if(d.kind!=='lib')return true;
+  const key=descKey(d);
+  return[...net.peers.values()].filter(p=>p.connected&&p.hello).every(p=>p.have&&p.have.key===key&&p.have.ok);
+}
 function netHostStart(){
-  const net=G.net;if(!net||!net.host||!net.connected)return;
+  const net=G.net;if(!net||!net.host||!net.connected||G.state==='play')return;
   const d=songDesc();if(d.kind==='file')return;
+  if(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d)))return;
   const at=performance.now()+(d.kind==='yt'?5000:3000);
-  net.oppEnd=null;net.opp=null;
-  netSend({t:'start',song:d,at});
+  net.inSong=net.roster.map(p=>({id:p.id,name:p.name,diff:p.diff}));net.ends={};net.live={};
+  netSend({t:'start',song:d,at,players:net.inSong});
   netStartLocal(d,at);
 }
 function netStartLocal(d,atLocal){
   const def=descToDef(d);
-  if(!def){toMenu();menuNote('Não consegui abrir a música escolhida.',true);return;}
-  G.net.oppEnd=null;G.net.opp=null;G.myEnd=null;$('againBtn').disabled=false;
+  const fail=t=>{toMenu();menuNote(t,true);};
+  if(!def){fail(d&&d.kind==='lib'?'Você não tem essa música na biblioteca. Importe o mesmo chart para jogar a próxima.':'Não consegui abrir a música escolhida.');return;}
+  if(def.lib&&!(G.lib&&G.lib.id===def.meta.id)){fail('A música ainda não terminou de carregar aqui. Ela entra na próxima rodada.');return;}
+  G.myEnd=null;$('againBtn').disabled=false;
   G.songDef=def;startGame(atLocal);
 }
 function netSendEnd(ok,quit){
-  if(!G.online||!G.net||!G.players[0])return;
-  const p=G.players[0];
-  netSend({t:'end',ok,quit,s:p.score,h:p.hits,n:p.notes.length,mc:p.maxCombo,out:p.out,diff:p.diff});
-}
-function netOnData(d){
-  const net=G.net;if(!d||typeof d!=='object')return;
-  switch(d.t){
-    case'hello':net.oppName=String(d.name||'Seu amigo').trim().slice(0,20)||'Seu amigo';net.oppDiff=DIFFS[d.diff]?d.diff:null;buildMenu();break;
-    case'diff':net.oppDiff=DIFFS[d.diff]?d.diff:null;if(!$('menu').hidden)buildMenu();break;
-    case'full':netReset();netStatus('Essa sala já tem dois jogadores.',true);buildMenu();break;
-    case'ping':netSend({t:'pong',a:d.a,b:performance.now()});break;
-    case'pong':{
-      const now=performance.now(),a=num(d.a),rtt=now-a;if(!(rtt>=0&&rtt<5000))break;
-      net.samples=(net.samples||[]).concat([[rtt,num(d.b)-(a+now)/2]]).slice(-10);
-      const best=net.samples.reduce((x,y)=>y[0]<x[0]?y:x);net.rtt=best[0];net.offset=net.host?0:best[1];
-      if(!$('menu').hidden)buildNetBox();break;
-    }
-    case'lobby':if(!net.host){net.hostSong=d.song;if(!$('menu').hidden)buildMenu();}break;
-    case'start':if(!net.host&&G.online){if(G.state==='play'||G.state==='record')break;show(null);netStartLocal(d.song,num(d.at)-net.offset);}break;
-    case'st':net.opp={s:num(d.s),c:num(d.c),m:num(d.m)||1,mt:Math.max(0,Math.min(1,num(d.mt))),sp:!!d.sp,o:!!d.o};break;
-    case'end':net.oppEnd={ok:!!d.ok,quit:!!d.quit,s:num(d.s),h:num(d.h),n:num(d.n),mc:num(d.mc),out:!!d.out,diff:DIFFS[d.diff]?d.diff:null};
-      net.opp=Object.assign(net.opp||{},{s:num(d.s),o:!!d.out});
-      if(!$('results').hidden&&G.myEnd)renderOnlineResults();break;
-  }
+  const net=G.net;if(!G.online||!net||!G.players[0])return;
+  const p=G.players[0],e={ok,quit,s:p.score,h:p.hits,n:p.notes.length,mc:p.maxCombo,out:p.out,diff:p.diff};
+  if(net.host){net.ends.h=cleanEnd(e);netSend(Object.assign({t:'end',id:'h'},e));}
+  else netSend(Object.assign({t:'end'},e));
 }
 setInterval(()=>{
-  if(!G.online||G.state!=='play'||!G.net||!G.net.connected)return;
+  const net=G.net;if(!G.online||G.state!=='play'||!net||!net.connected)return;
   const p=G.players[0];if(!p)return;P=p;
-  netSend({t:'st',s:p.score,c:p.combo,m:mult(),mt:+p.meter.toFixed(3),sp:p.spActive,o:p.out});
+  const st={s:p.score,c:p.combo,m:mult(),mt:+p.meter.toFixed(3),sp:p.spActive,o:p.out};
+  if(net.host){net.live.h=st;netSend({t:'sts',l:net.live});}
+  else netSend(Object.assign({t:'st'},st));
 },120);
-function drawOpp(){
-  const net=G.net;if(!G.online||!net||(!net.connected&&!net.opp))return;
-  const o=net.opp||{s:0,c:0,m:1,mt:.5},me=G.players[0];
-  const w=Math.min(230,W*.46),h=86,x=W-w-14,y=(narrow?122:68);
+// placar ao vivo de todos os jogadores da sala, no canto superior direito
+function drawBoard(){
+  const net=G.net||G.netLast;if(!G.online||!net||!net.inSong||!net.inSong.length)return;
+  const me=G.players[0];
+  const rows=net.inSong.map(p=>{
+    const mine=p.id===net.myId,e=!mine&&net.ends[p.id],l=mine?null:net.live[p.id];
+    const s=mine?(me?me.score:0):e?e.s:l?l.s:0,gone=!mine&&!netIsHere(net,p.id)&&!e;
+    const tag=mine?(me&&me.out?'VAIADO':me&&me.spActive?'★ ×'+mult():'×'+(me?mult():1)):e?(e.quit?'SAIU':e.out?'VAIADO':'FIM'):gone?'SAIU':l?(l.o?'VAIADO':(l.sp?'★ ':'')+'×'+l.m):'…';
+    const mt=mine?(me?me.meter:.5):l?l.mt:.5;
+    return{mine,name:mine?'VOCÊ':p.name.toUpperCase(),s,tag,mt,sp:mine?me&&me.spActive:l&&l.sp,dim:gone||(e&&e.quit)};
+  }).sort((a,b)=>b.s-a.s);
+  const compact=narrow||W<700,rh=compact?19:23,maxRows=compact?6:8,shown=rows.slice(0,maxRows);
+  const mi=rows.findIndex(r=>r.mine);if(mi>=maxRows)shown[maxRows-1]=rows[mi];
+  const w=Math.min(compact?200:240,W*.5),h=26+shown.length*rh+6,x=W-w-14,y=narrow?122:68;
   c.save();c.fillStyle='rgba(10,5,12,.8)';c.strokeStyle='rgba(255,190,140,.25)';c.lineWidth=1;
   c.beginPath();c.roundRect?c.roundRect(x,y,w,h,10):c.rect(x,y,w,h);c.fill();c.stroke();
-  c.textAlign='left';c.fillStyle='rgba(247,236,223,.65)';c.font='600 11px "Chakra Petch",sans-serif';
-  c.fillText(((net.oppName||'Seu amigo').toUpperCase()+(net.connected?'':' · SAIU')).slice(0,28),x+12,y+18);
-  c.fillStyle='#f7ecdf';c.font='700 22px "Chakra Petch",sans-serif';c.fillText(Math.round(o.s).toLocaleString('pt-BR'),x+12,y+43);
-  c.textAlign='right';c.font='700 13px "Chakra Petch",sans-serif';c.fillStyle=o.sp?'#7fe9ff':'#ffd23b';
-  c.fillText(net.oppEnd?'TERMINOU':o.o?'VAIADO':`×${o.m}${o.c>=5?' · '+o.c:''}`,x+w-12,y+43);
-  const bw=w-24;c.fillStyle='rgba(255,255,255,.1)';c.fillRect(x+12,y+52,bw,6);
-  c.fillStyle=o.mt<.33?'#e5383b':o.mt<.66?'#ffd23b':'#2fd35a';c.fillRect(x+12,y+52,bw*o.mt,6);
-  if(me){const d=me.score-Math.round(o.s);c.textAlign='left';c.font='600 11px "Chakra Petch",sans-serif';c.fillStyle=d>=0?'#2fd35a':'#ff8f8f';
-    c.fillText(d===0?'EMPATADOS':d>0?`VOCÊ NA FRENTE +${d.toLocaleString('pt-BR')}`:`VOCÊ ATRÁS ${d.toLocaleString('pt-BR')}`,x+12,y+76);}
+  c.textAlign='left';c.fillStyle='rgba(247,236,223,.6)';c.font='600 10px "Chakra Petch",sans-serif';
+  c.fillText(`SALA ${net.code} · ${rows.length} TOCANDO`,x+10,y+16);
+  shown.forEach((r,i)=>{
+    const ry=y+26+i*rh,pos=rows.indexOf(r)+1;
+    if(r.mine){c.fillStyle='rgba(255,138,31,.16)';c.fillRect(x+4,ry,w-8,rh-2);}
+    c.globalAlpha=r.dim?.45:1;
+    c.textAlign='left';c.font=`700 ${compact?11:12}px "Chakra Petch",sans-serif`;
+    c.fillStyle=pos===1?'#ffd23b':'rgba(247,236,223,.7)';c.fillText(pos+'º',x+10,ry+rh*.62);
+    c.fillStyle=r.mine?'#ffb26b':'#f7ecdf';c.fillText(r.name.slice(0,14),x+32,ry+rh*.62,w*.42);
+    c.textAlign='right';c.fillStyle='#f7ecdf';c.fillText(Math.round(r.s).toLocaleString('pt-BR'),x+w-10,ry+rh*.62);
+    c.font=`600 ${compact?9:10}px "Chakra Petch",sans-serif`;c.fillStyle=r.sp?'#7fe9ff':r.tag==='VAIADO'||r.tag==='SAIU'?'#ff8f8f':'#ffd23b';
+    c.fillText(r.tag,x+w*.74,ry+rh*.62);
+    c.fillStyle=r.mt<.33?'#e5383b':r.mt<.66?'#ffd23b':'#2fd35a';c.fillRect(x+32,ry+rh-4,(w*.42)*Math.max(0,Math.min(1,r.mt)),2);
+    c.globalAlpha=1;
+  });
   c.restore();
 }
 function buildNetBox(){
@@ -1434,7 +1567,7 @@ function buildNetBox(){
     box.innerHTML=`<div><h2><label for="netName">Seu nome</label></h2><input class="field" id="netName" maxlength="20" autocomplete="nickname" value="${escH(store.get('rr:name','')||'')}" placeholder="Jogador"></div>
       <div class="row"><button class="btn primary" id="netCreateBtn">Criar sala</button></div>
       <div class="row"><input class="field" id="netCode" maxlength="5" autocomplete="off" autocapitalize="characters" placeholder="Código da sala" value="${escH(G.netCodeDraft||'')}" aria-label="Código da sala"><button class="btn" id="netJoinBtn">Entrar</button></div>
-      <p>Um cria a sala e manda o código ou o link. O outro entra com o código. Cada um joga no próprio computador ou celular.</p>${status}`;
+      <p>Um cria a sala e manda o código ou o link. Os outros entram com o código, até 8 pessoas. Cada um joga no próprio computador ou celular.</p>${status}`;
     $('netName').oninput=e=>store.set('rr:name',e.target.value.slice(0,20));
     $('netCode').oninput=e=>{G.netCodeDraft=e.target.value;};
     $('netCode').onkeydown=e=>{if(e.key==='Enter')netJoin($('netCode').value);};
@@ -1443,19 +1576,40 @@ function buildNetBox(){
     return;
   }
   const leave=`<div class="row"><button class="btn" id="netLeave">${net.host?'Fechar sala':'Sair da sala'}</button></div>`;
-  if(net.connected){
-    const opp=escH(net.oppName||'Seu amigo'),od=net.oppDiff?DIFFS[net.oppDiff].label:'';
-    let song='';
-    if(net.host)song=G.songDef.custom?'<p>Músicas de arquivo não funcionam no duelo online. Escolha uma música da casa ou do YouTube.</p>':'<p>Escolha a música e aperte <b>Tocar</b>. A música começa ao mesmo tempo para os dois.</p>';
-    else{const def=descToDef(net.hostSong);song=`<p>${opp} escolhe a música${def?`: <b>${escH(def.name)}</b>`:''}. Escolha sua dificuldade e espere começar.</p>`;}
-    box.innerHTML=`<p>Conectado com <b>${opp}</b>${od?` (${escH(od)})`:''}${net.rtt!=null?` · atraso da conexão ${Math.round(net.rtt/2)} ms`:''}</p>${song}${leave}${status}`;
-  }else if(net.host){
+  if(!net.host&&!net.connected){box.innerHTML=`<p>Entrando na sala <b>${escH(net.code)}</b>…</p>${leave}${status}`;$('netLeave').onclick=()=>{netReset();netStatus('');buildMenu();};return;}
+  if(net.host&&!net.open){box.innerHTML=`<p>Criando a sala…</p>${leave}${status}`;$('netLeave').onclick=()=>{netReset();netStatus('');buildMenu();};return;}
+  const hs=net.host?songDesc():net.hostSong,key=descKey(hs),lib=hs&&hs.kind==='lib';
+  const libTag=p=>{
+    if(!lib)return'';
+    if(p.id==='h')return' <span class="ok">✓</span>';
+    let hv=null;
+    if(net.host){const pp=net.peers.get(p.id);hv=pp&&pp.have&&pp.have.key===key?pp.have:null;}
+    else if(p.id===net.myId){const s=(net.sentHave||'').split('|');hv=s[0]===key?{ok:s[1]==='true',why:s[2]}:null;}
+    else return'';
+    return hv?(hv.ok?' <span class="ok">✓ tem a música</span>':hv.why==='missing'?' <span class="bad">não tem esse chart</span>':hv.why==='perm'?' <span class="bad">precisa liberar a pasta</span>':hv.why==='error'?' <span class="bad">não conseguiu abrir</span>':' <span class="muted">carregando…</span>'):' <span class="muted">…</span>';
+  };
+  const list=`<ul class="roster">${net.roster.map(p=>`<li>${p.id===net.myId?'<b>Você</b>':escH(p.name)}${p.id==='h'?' <span class="muted">(criou a sala)</span>':''}${p.diff?` · ${escH(DIFFS[p.diff].label)}`:''}${libTag(p)}</li>`).join('')}</ul>`;
+  let body='';
+  if(net.host){
     const link=location.origin+location.pathname+'?sala='+net.code;
-    box.innerHTML=net.open?`<p>Sua sala</p><div class="roomcode">${net.code}</div><p>Mande o código ou o link para seu amigo e espere ele entrar.</p>
-      <div class="row"><input class="field" id="netLink" readonly value="${escH(link)}" aria-label="Link da sala"><button class="btn" id="netCopy">Copiar link</button></div>${leave}${status}`
-      :`<p>Criando a sala…</p>${leave}${status}`;
-    const cp=$('netCopy');if(cp)cp.onclick=()=>{const f=$('netLink');const ok=()=>{cp.textContent='Copiado';};try{navigator.clipboard.writeText(link).then(ok,()=>{f.focus();f.select();});}catch(e){f.focus();f.select();}};
-  }else box.innerHTML=`<p>Entrando na sala <b>${escH(net.code)}</b>…</p>${leave}${status}`;
+    body=`<p>Sua sala</p><div class="roomcode">${net.code}</div><div class="row"><input class="field" id="netLink" readonly value="${escH(link)}" aria-label="Link da sala"><button class="btn" id="netCopy">Copiar link</button></div>`;
+    body+=net.connected?`<p>Na sala (${net.roster.length} de ${NET_MAX}):</p>${list}`:`<p>Mande o código ou o link e espere seus amigos entrarem. Cabem até ${NET_MAX} pessoas.</p>`;
+    if(net.connected)body+=hs.kind==='file'?'<p>Músicas de arquivo sem chart não funcionam online. Escolha uma música da casa, do YouTube ou da sua biblioteca.</p>'
+      :lib&&!netAllHave(net,hs)?'<p>Todos precisam ter esse chart na biblioteca para começar. Quem não tiver pode importar o mesmo arquivo (.sng, .chart ou pasta do Clone Hero).</p>'
+      :'<p>Escolha a música e aperte <b>Tocar</b>. A música começa ao mesmo tempo para todos.</p>';
+  }else{
+    const def=descToDef(hs),hn=escH(netHostName(net));
+    body=`<p>Na sala <b>${escH(net.code)}</b>${net.rtt!=null?` · atraso ${Math.round(net.rtt/2)} ms`:''}:</p>${list}<p>${hn} escolhe a música${def?`: <b>${escH(def.name)}</b>`:hs&&hs.kind==='lib'?`: <b>${escH(hs.name)}</b>`:''}. Escolha sua dificuldade e espere começar.</p>`;
+    if(lib){
+      const m=LIB.list.find(x=>x.id===hs.hash);
+      if(!m)body+=`<p class="err" style="margin:0">Você não tem esse chart${hs.artist?` (${escH(hs.artist)} - ${escH(hs.name)})`:''} na biblioteca. Importe o mesmo arquivo para jogar.</p><div class="row"><button class="btn" id="netImport">Importar chart</button></div>`;
+      else if(LIB.err&&LIB.err.id===m.id&&LIB.err.perm)body+=`<div class="row"><button class="btn primary" id="netPerm">Liberar a pasta do Clone Hero</button></div>`;
+    }
+  }
+  box.innerHTML=body+leave+status;
+  const cp=$('netCopy');if(cp)cp.onclick=()=>{const f=$('netLink'),link=f.value;const ok=()=>{cp.textContent='Copiado';};try{navigator.clipboard.writeText(link).then(ok,()=>{f.focus();f.select();});}catch(e){f.focus();f.select();}};
+  const im=$('netImport');if(im)im.onclick=()=>{chartErrT('');if(!chartBusy)chartMsgT('');show('chartPanel');};
+  const pm=$('netPerm');if(pm)pm.onclick=()=>{const m=LIB.list.find(x=>x.id===hs.hash);if(m){LIB.err=null;libEnsure(m,true).catch(()=>{});}};
   $('netLeave').onclick=()=>{netReset();netStatus('');buildMenu();};
 }
 
@@ -1468,10 +1622,13 @@ function buildMenu(){
   const guest=G.online&&G.net&&G.net.connected&&!G.net.host;
   if(guest){
     const def=descToDef(G.net.hostSong),b=document.createElement('div');b.className='song locked';b.setAttribute('aria-pressed','true');
-    const hs=G.net.hostSong;
-    b.innerHTML=def?`<span class="nm">${escH(def.name)}</span><span class="meta">Escolhida por ${escH(G.net.oppName||'seu amigo')}</span><span class="tier"><b>${def.yt?'▶':'♪'}</b>${def.yt?'YouTube':'da casa'}</span>`
-      :`<span class="nm">${hs&&hs.kind==='file'?'Música de arquivo':'Aguardando a escolha'}</span><span class="meta">${hs&&hs.kind==='file'?'Não funciona online. Peça para escolher outra.':escH(G.net.oppName||'Seu amigo')+' ainda não escolheu a música.'}</span>`;
+    const hs=G.net.hostSong,hn=escH(netHostName(G.net));
+    b.innerHTML=def?`<span class="nm">${escH(def.name)}</span><span class="meta">${def.lib&&def.meta.artist?escH(def.meta.artist)+' · ':''}Escolhida por ${hn}</span><span class="tier"><b>${def.yt?'▶':'♪'}</b>${def.yt?'YouTube':def.lib?'biblioteca':'da casa'}</span>`
+      :hs&&hs.kind==='lib'?`<span class="nm">${escH(String(hs.name||'Música da biblioteca').slice(0,120))}</span><span class="meta">${hs.artist?escH(String(hs.artist).slice(0,80))+' · ':''}Você não tem esse chart. Importe o mesmo arquivo em "Chart pronto" para jogar.</span>`
+      :`<span class="nm">${hs&&hs.kind==='file'?'Música de arquivo':'Aguardando a escolha'}</span><span class="meta">${hs&&hs.kind==='file'?'Não funciona online. Peça para escolher outra.':hn+' ainda não escolheu a música.'}</span>`;
     songs.appendChild(b);
+    const gi=document.createElement('button');gi.className='swap';gi.id='guestImport';gi.textContent=`Importar músicas para a sua biblioteca (${LIB.list.length})`;
+    gi.onclick=()=>{chartErrT('');if(!chartBusy)chartMsgT('');show('chartPanel');};songs.appendChild(gi);
   }else{
   const bestOf=id=>Math.max(...Object.keys(DIFFS).map(d=>store.get(`rr:best:${id}:${d}`,0)));
   for(const s of SONGS){
@@ -1481,10 +1638,9 @@ function buildMenu(){
     b.onclick=()=>{G.songDef=s;savePrefs();buildMenu();};
     songs.appendChild(b);
   }
-  const u=document.createElement('button');u.className='song upload';u.setAttribute('aria-pressed',!!G.songDef.custom);
+  const u=document.createElement('button');u.className='song upload';u.setAttribute('aria-pressed',G.songDef===CUSTOM);
   const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
   if(loading)u.innerHTML=`<span class="nm">${esc(loading.name)}</span><span class="meta">${loading.err?esc(loading.err):'Ouvindo a música e criando as notas… '+Math.round(loading.p*100)+'%'}</span>`;
-  else if(G.custom&&G.custom.chart)u.innerHTML=`<span class="nm">${esc(G.custom.name)}</span><span class="meta">${G.custom.chart.artist?esc(G.custom.chart.artist)+' · ':''}Chart pronto · ${fmtTime(G.custom.dur)} · ${Object.keys(G.custom.chart.diffs).map(k=>DIFFS[k].label).join(', ')}</span><span class="tier"><b>♪</b>chart</span>`;
   else if(G.custom)u.innerHTML=`<span class="nm">${esc(G.custom.name)}</span><span class="meta">Sua música · cerca de ${Math.round(G.custom.an.bpm)} BPM · ${fmtTime(G.custom.an.dur)}</span><span class="tier"><b>♪</b>notas automáticas</span>`;
   else u.innerHTML=`<span class="nm">Carregar sua música</span><span class="meta">Escolha um MP3, WAV ou OGG do seu aparelho. O jogo escuta a faixa e cria as notas.</span><span class="tier"><b>+</b>arquivo</span>`;
   u.onclick=()=>{if(loading&&!loading.err)return;if(G.custom&&!loading){G.songDef=CUSTOM;buildMenu();return;}fileIn.click();};
@@ -1515,9 +1671,10 @@ function buildMenu(){
   yb.onclick=()=>{loadYTApi().catch(()=>{});ytErr('');if(!ytAuto)ytAutoMsg('');show('ytPanel');buildRates();$('ytUrl').focus();};
   songs.appendChild(yb);
   const cb=document.createElement('button');cb.className='song upload';
-  cb.innerHTML=`<span class="nm">Chart pronto (.chart / .mid)</span><span class="meta">Charts feitos à mão no Moonscraper ou do Clone Hero, com o áudio da música ou com um vídeo do YouTube.</span><span class="tier"><b>+</b>importar</span>`;
+  cb.innerHTML=`<span class="nm">Chart pronto (Clone Hero, .sng, .chart)</span><span class="meta">Coloque músicas do Clone Hero na sua biblioteca: a pasta inteira, pacotes .sng ou charts do Moonscraper.</span><span class="tier"><b>+</b>importar</span>`;
   cb.onclick=()=>{chartErrT('');if(!chartBusy)chartMsgT('');show('chartPanel');};
   songs.appendChild(cb);
+  buildLibCards(songs,bestOf,esc);
   }
 
   const pl=$('players');pl.innerHTML='';
@@ -1541,14 +1698,34 @@ function buildMenu(){
     :`<span>${kc(LABELS[0])} trastes</span><span><kbd>Enter</kbd><kbd>↑</kbd><kbd>↓</kbd> palhetar</span><span><kbd>Espaço</kbd> Poder Estelar</span><span><kbd>Esc</kbd> pausa</span><span>No celular, toque nas pistas.</span>`;
   $('offset').value=G.offset;$('offVal').textContent=G.offset+' ms';
   const pb=$('playBtn');pb.textContent='Tocar';
-  pb.disabled=!!((G.songDef.custom&&!G.custom)||(loading&&!loading.err));
+  const libLd=G.songDef.lib&&LIB.loading&&LIB.loading.id===G.songDef.meta.id;
+  pb.disabled=!!((G.songDef===CUSTOM&&!G.custom)||(loading&&!loading.err)||libLd);
+  if(libLd)pb.textContent='Carregando a música…';
   if(G.online){
     const net=G.net;
     if(!net||!net.connected)pb.disabled=true;
-    else if(!net.host){pb.disabled=true;pb.textContent='Esperando '+(net.oppName||'seu amigo');}
-    else{if(G.songDef.custom)pb.disabled=true;netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netSend({t:'diff',diff:G.diffs[0]});}}
+    else if(!net.host){pb.disabled=true;pb.textContent='Esperando '+netHostName(net)+' começar';if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netSend({t:'diff',diff:G.diffs[0]});}}
+    else{const d=songDesc();if(d.kind==='file'||(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d))))pb.disabled=true;netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netRoster(net);}}
   }
   if(G.songDef.yt||(G.online&&G.net&&G.net.hostSong&&G.net.hostSong.kind==='yt'))loadYTApi().catch(()=>{});
+}
+function buildLibCards(songs,bestOf,esc){
+  if(!LIB.list.length)return;
+  const h=document.createElement('div');h.className='libhead';h.innerHTML=`<span>Sua biblioteca · ${LIB.list.length} ${LIB.list.length===1?'música':'músicas'}</span>`;songs.appendChild(h);
+  if(LIB.list.length>6){const f=document.createElement('input');f.className='field libsearch';f.placeholder='Procurar música ou artista';f.value=LIB.filter;f.setAttribute('aria-label','Procurar na biblioteca');
+    f.oninput=()=>{LIB.filter=f.value;const pos=f.selectionStart;buildMenu();const g=document.querySelector('.libsearch');if(g){g.focus();try{g.setSelectionRange(pos,pos);}catch(e){}}};songs.appendChild(f);}
+  const q=LIB.filter.trim().toLowerCase(),list=q?LIB.list.filter(m=>(m.name+' '+m.artist).toLowerCase().includes(q)):LIB.list,MAXC=60;
+  for(const m of list.slice(0,MAXC)){
+    const b=document.createElement('button');b.className='song';const on=!!(G.songDef.lib&&G.songDef.meta.id===m.id);b.setAttribute('aria-pressed',on);
+    const best=bestOf('lib:'+m.id),ld=LIB.loading&&LIB.loading.id===m.id,er=LIB.err&&LIB.err.id===m.id?LIB.err.msg:'';
+    const dl=m.diffs.map(k=>DIFFS[k]?DIFFS[k].label:k).join(', ');
+    b.innerHTML=`<span class="nm">${esc(m.name)}</span><span class="meta">${er?`<span class="bad">${esc(er)}</span>`:`${m.artist?esc(m.artist)+' · ':''}${m.dur?fmtTime(m.dur)+' · ':''}${dl}`}</span><span class="tier"><b>♪</b>${ld?'carregando…':best?'recorde '+best.toLocaleString('pt-BR'):'biblioteca'}</span>`;
+    b.onclick=()=>libSelect(m);songs.appendChild(b);
+    if(on){const a=document.createElement('div');a.className='actions';const del=document.createElement('button');del.className='swap';del.textContent=m._confirm?'Confirmar: tirar da biblioteca':'Tirar da biblioteca';
+      del.onclick=()=>{if(!m._confirm){m._confirm=1;del.textContent='Confirmar: tirar da biblioteca';return;}libRemove(m);};a.append(del);songs.appendChild(a);}
+  }
+  if(list.length>MAXC){const n=document.createElement('p');n.className='hint';n.textContent=`Mostrando ${MAXC} de ${list.length}. Use a busca para achar as outras.`;songs.appendChild(n);}
+  else if(!list.length){const n=document.createElement('p');n.className='hint';n.textContent='Nenhuma música com esse nome.';songs.appendChild(n);}
 }
 function menuNote(t,bad){const n=$('menuNote');n.textContent=t;n.className=bad?'err':'note';n.hidden=false;}
 function ytErr(t){const e=$('ytErr');e.textContent=t;e.hidden=!t;}
@@ -1607,43 +1784,231 @@ fileIn.onchange=async()=>{
   }
   buildMenu();
 };
-// ---------- importar chart pronto ----------
+// ---------- biblioteca de músicas (fica salva neste navegador) ----------
+const LIB={list:[],dbP:null,loading:null,err:null,filter:'',restored:false};
 let chartBusy=false;
 function chartMsgT(t){const m=$('chartMsg');m.textContent=t;m.hidden=!t;}
 function chartErrT(t){const m=$('chartErr');m.textContent=t;m.hidden=!t;}
-const isChartFile=f=>/\.(chart|mid|midi)$/i.test(f.name);
-const isAudio=f=>/\.(ogg|opus|mp3|wav|m4a|flac|aac|webm)$/i.test(f.name)||/^audio\//.test(f.type);
-async function readChart(f){const ab=await f.arrayBuffer();return/\.chart$/i.test(f.name)?parseChartText(new TextDecoder().decode(ab)):parseMidi(ab);}
-function chartErrText(e){const m=e&&e.message;return m==='nonotes'?'Esse chart não tem notas de guitarra.':m==='nochart'?'Faltou o arquivo do chart (notes.chart ou notes.mid).':m==='noaudio'?'Faltou o áudio. Escolha também o song.ogg ou o MP3 da música.':m==='decode'?'Não consegui ler o áudio. Tente OGG, MP3 ou WAV.':'Não consegui ler esse chart. Use um notes.chart ou notes.mid.';}
+function idb(){
+  if(LIB.dbP)return LIB.dbP;
+  const p=new Promise((res,rej)=>{
+    if(!window.indexedDB)return rej(new Error('noidb'));
+    let r;try{r=indexedDB.open('riff-relampago',1);}catch(e){return rej(e);}
+    r.onupgradeneeded=()=>{const db=r.result;for(const n of['meta','data'])if(!db.objectStoreNames.contains(n))db.createObjectStore(n,{keyPath:'id'});if(!db.objectStoreNames.contains('kv'))db.createObjectStore('kv');};
+    r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error||new Error('idb'));r.onblocked=()=>rej(new Error('blocked'));
+  });
+  LIB.dbP=p;p.catch(()=>{if(LIB.dbP===p)LIB.dbP=null;});
+  return p;
+}
+function idbTx(stores,mode,fn){return idb().then(db=>new Promise((res,rej)=>{let out;const tx=db.transaction(stores,mode);const r=fn(tx);if(r&&'onsuccess'in r)r.onsuccess=()=>{out=r.result;};tx.oncomplete=()=>res(out);tx.onerror=()=>rej(tx.error||new Error('tx'));tx.onabort=()=>rej(tx.error||new Error('abort'));}));}
+const idbGet=(store,key)=>idbTx(store,'readonly',tx=>tx.objectStore(store).get(key));
+const idbAll=store=>idbTx(store,'readonly',tx=>tx.objectStore(store).getAll());
+const idbPutSong=(meta,data)=>idbTx(['meta','data'],'readwrite',tx=>{tx.objectStore('data').put(data);tx.objectStore('meta').put(meta);});
+const idbDelSong=id=>idbTx(['meta','data'],'readwrite',tx=>{tx.objectStore('data').delete(id);tx.objectStore('meta').delete(id);});
+// impressão digital do chart: igual em qualquer computador que tenha o mesmo arquivo
+function chartHash(ch){
+  let a=0x811c9dc5,b=0x9747b28c;
+  const add=s=>{for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,16777619);b=Math.imul(b^c,0x5bd1e995);b^=b>>>15;}};
+  for(const k of Object.keys(CH_DIFFS)){const ns=ch.diffs[k];if(!ns)continue;add(k+':');for(const n of ns)add(Math.round(n.time*1000)+','+n.lane+','+Math.round(n.len*1000)+';');}
+  return(a>>>0).toString(16).padStart(8,'0')+(b>>>0).toString(16).padStart(8,'0');
+}
+// pacote .sng do Clone Hero: cabeçalho, metadados, índice e arquivos embaralhados com XOR
+function parseSng(ab){
+  const u=new Uint8Array(ab),d=new DataView(ab),L=u.length,td=new TextDecoder();
+  const u64=o=>{if(o+8>L)throw new Error('format');return d.getUint32(o,true)+d.getUint32(o+4,true)*4294967296;};
+  if(L<42||td.decode(u.subarray(0,6))!=='SNGPKG')throw new Error('format');
+  const mask=u.slice(10,26);let p=26;
+  const mlen=u64(p),mc=u64(p+8);let q=p+16;const meta={};
+  for(let i=0;i<mc&&i<500;i++){const kl=d.getInt32(q,true);q+=4;if(kl<0||q+kl>L)throw new Error('format');const k=td.decode(u.subarray(q,q+kl));q+=kl;const vl=d.getInt32(q,true);q+=4;if(vl<0||q+vl>L)throw new Error('format');meta[k.toLowerCase()]=td.decode(u.subarray(q,q+vl));q+=vl;}
+  p=p+8+mlen;
+  const ic=u64(p+8);q=p+16;const files=[];
+  for(let i=0;i<ic&&i<200;i++){if(q>=L)throw new Error('format');const nl=u[q++];const name=td.decode(u.subarray(q,q+nl));q+=nl;const size=u64(q),off=u64(q+8);q+=16;if(off+size>L)throw new Error('format');files.push({name:name.split(/[\\/]/).pop(),size,off});}
+  return{meta,files:files.map(f=>({name:f.name,ab:async()=>{const out=new Uint8Array(f.size),src=u.subarray(f.off,f.off+f.size);for(let i=0;i<f.size;i++)out[i]=src[i]^mask[i&15]^(i&255);return out.buffer;}}))};
+}
+const isChartFile=n=>/\.(chart|mid|midi)$/i.test(n);
+const isStem=n=>/\.(ogg|opus|mp3|wav|m4a|flac|aac|webm)$/i.test(n)&&!/^(preview|crowd)\b/i.test(n);
+function pickChart(names){return names.find(n=>/^notes\.chart$/i.test(n))||names.find(n=>/^notes\.midi?$/i.test(n))||names.find(n=>/\.chart$/i.test(n))||names.find(n=>/\.midi?$/i.test(n))||null;}
+async function chartFrom(name,ab){return/\.chart$/i.test(name)?parseChartText(new TextDecoder().decode(ab)):parseMidi(ab);}
+function applyDelay(chart,ms){const s=(+ms||0)/1000;if(!s)return chart;for(const k in chart.diffs)chart.diffs[k].forEach(n=>n.time=+(n.time+s).toFixed(3));for(const k in chart.sp)chart.sp[k].forEach(w=>{w[0]+=s;w[1]+=s;});chart.beats=chart.beats.map(b=>b+s);chart.last+=s;return chart;}
+function makeMeta(chart,info,extra){
+  const id=chartHash(chart);applyDelay(chart,info.delay);
+  return Object.assign({id,name:String(info.name||chart.name||'Música sem nome').trim().slice(0,120),artist:String(info.artist||chart.artist||'').trim().slice(0,80),charter:String(info.charter||info.frets||'').replace(/<[^>]*>/g,'').trim().slice(0,60),
+    diffs:Object.keys(chart.diffs),dur:(+info.song_length||0)/1000||chart.last+2,added:Date.now()},extra);
+}
+// lê uma música a partir de uma lista de arquivos [{name, ab()}] (pasta ou pacote .sng)
+async function songFromEntries(entries,info){
+  const cn=pickChart(entries.map(e=>e.name));if(!cn)throw new Error('nochart');
+  const chart=await chartFrom(cn,await entries.find(e=>e.name===cn).ab());
+  const ini=entries.find(e=>/^song\.ini$/i.test(e.name));
+  if(ini&&!info)info=parseIni(new TextDecoder().decode(await ini.ab()));
+  const stems=entries.map(e=>e.name).filter(isStem);
+  if(!stems.length)throw new Error('noaudio');
+  return{chart,info:info||{},stems};
+}
+function libDef(m){return{id:'lib:'+m.id,lib:true,custom:true,name:m.name,meta:m};}
+function curCustom(){const d=G.songDef;if(d.lib)return G.lib&&G.lib.id===d.meta.id?G.lib:null;return d.custom?G.custom:null;}
+async function libRefresh(){
+  let all=[];try{all=await idbAll('meta');}catch(e){}
+  const ids=new Set(all.map(m=>m.id));for(const m of Object.values(LIB.memMeta||{}))if(!ids.has(m.id))all.push(m);
+  LIB.list=all.sort((a,b)=>(a.artist+' '+a.name).localeCompare(b.artist+' '+b.name,'pt-BR'));
+  if(!LIB.restored){
+    LIB.restored=true;
+    const m=typeof sel.song==='string'&&LIB.list.find(x=>'lib:'+x.id===sel.song);
+    if(m&&G.state==='menu'&&G.songDef===SONGS[0]&&!G.online){G.songDef=libDef(m);libEnsure(m,false,true).catch(()=>{});}
+  }
+  if(G.state==='menu'&&!$('menu').hidden)buildMenu();
+  netLibHave();
+}
+async function libDir(gesture){
+  const h=await idbGet('kv','dir');if(!h)throw new Error('gone');
+  let st=h.queryPermission?await h.queryPermission({mode:'read'}):'granted';
+  if(st!=='granted'&&gesture&&h.requestPermission)st=await h.requestPermission({mode:'read'});
+  if(st!=='granted')throw new Error('perm');
+  return h;
+}
+async function decodeAB(ab){initAudio();return await new Promise((res,rej)=>{const r=AC.decodeAudioData(ab,res,rej);if(r&&r.then)r.then(res,rej);});}
+function sumInto(a,b){
+  const len=Math.max(a.length,b.length),ch=Math.max(a.numberOfChannels,b.numberOfChannels);
+  let out=a;if(a.length<len||a.numberOfChannels<ch){out=AC.createBuffer(ch,len,a.sampleRate);for(let c=0;c<ch;c++)out.getChannelData(c).set(a.getChannelData(Math.min(c,a.numberOfChannels-1)));}
+  for(let c=0;c<ch;c++){const o=out.getChannelData(c),x=b.getChannelData(Math.min(c,b.numberOfChannels-1));for(let i=0;i<x.length;i++)o[i]+=x[i];}
+  return out;
+}
+async function libLoad(m,gesture){
+  let data=LIB.mem&&LIB.mem[m.id];
+  if(!data){try{data=await idbGet('data',m.id);}catch(e){data=null;}}
+  if(!data)throw new Error('gone');
+  let files;
+  if(data.src==='sng')files=parseSng(await data.blob.arrayBuffer()).files;
+  else if(data.src==='dir'||data.src==='dirsng'){
+    let d=await libDir(gesture);
+    try{for(const seg of data.path)d=await d.getDirectoryHandle(seg);}catch(e){throw new Error('gone');}
+    if(data.src==='dirsng'){let f;try{f=await (await d.getFileHandle(data.file)).getFile();}catch(e){throw new Error('gone');}files=parseSng(await f.arrayBuffer()).files;}
+    else files=data.stems.map(n=>({name:n,ab:async()=>(await (await d.getFileHandle(n)).getFile()).arrayBuffer()}));
+  }else files=data.stems.map(s=>({name:s.name,ab:()=>s.blob.arrayBuffer()}));
+  let mix=null,gtr=null;
+  for(const f of files.filter(f=>isStem(f.name))){
+    let buf;try{buf=await decodeAB(await f.ab());}catch(e){continue;}
+    if(/^guitar\b/i.test(f.name))gtr=gtr?sumInto(gtr,buf):buf;else mix=mix?sumInto(mix,buf):buf;
+    await new Promise(r=>setTimeout(r,0));
+  }
+  if(!mix&&!gtr)throw new Error('decode');
+  const stems=[];if(mix)stems.push({buffer:mix,guitar:false});if(gtr)stems.push({buffer:gtr,guitar:true});
+  return{id:m.id,name:m.name,chart:data.chart,stems,buffer:mix||gtr,dur:Math.max(...stems.map(s=>s.buffer.duration))};
+}
+function libErrText(e){const m=e&&e.message;return m==='perm'?'O navegador precisa da sua permissão para ler a pasta do Clone Hero. Toque na música e aceite.':m==='gone'?'Não achei os arquivos dessa música. Se ela veio da pasta do Clone Hero, procure músicas na pasta de novo.':m==='decode'?'Este navegador não conseguiu tocar o áudio dessa música. Tente o Chrome ou o Edge.':'Não consegui abrir essa música.';}
+function libEnsure(m,gesture,quiet){
+  if(G.lib&&G.lib.id===m.id)return Promise.resolve(G.lib);
+  if(LIB.loading&&LIB.loading.id===m.id)return LIB.loading.p;
+  if(LIB.err&&LIB.err.id===m.id)LIB.err=null;
+  const job={id:m.id};
+  job.p=libLoad(m,gesture).then(L=>{if(LIB.loading===job)G.lib=L;return L;},e=>{if(LIB.loading===job&&!(quiet&&e&&e.message==='perm'))LIB.err={id:m.id,msg:libErrText(e),perm:e&&e.message==='perm'};throw e;})
+    .finally(()=>{if(LIB.loading===job)LIB.loading=null;if(G.state==='menu')buildMenu();netLibHave();});
+  LIB.loading=job;if(G.state==='menu'&&!$('menu').hidden)buildMenu();
+  return job.p;
+}
+async function libSave(meta,data){
+  meta.src=data.src;data.id=meta.id;
+  try{await idbPutSong(meta,data);if(LIB.mem)delete LIB.mem[meta.id];if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});return true;}
+  catch(e){(LIB.memMeta=LIB.memMeta||{})[meta.id]=meta;(LIB.mem=LIB.mem||{})[meta.id]=data;meta.unsaved=e&&e.name==='QuotaExceededError'?'quota':'save';return false;}
+}
+function libSelect(m){G.songDef=libDef(m);savePrefs();libEnsure(m,true).catch(()=>{});buildMenu();}
+async function libRemove(m){
+  try{await idbDelSong(m.id);}catch(e){}
+  if(LIB.mem)delete LIB.mem[m.id];if(LIB.memMeta)delete LIB.memMeta[m.id];
+  LIB.list=LIB.list.filter(x=>x.id!==m.id);
+  if(G.lib&&G.lib.id===m.id)G.lib=null;
+  if(G.songDef.lib&&G.songDef.meta.id===m.id){G.songDef=SONGS[0];savePrefs();}
+  buildMenu();
+}
+// ---------- importar charts ----------
+function chartErrText(e){const m=e&&e.message;return m==='nonotes'?'Esse chart não tem notas de guitarra.':m==='nochart'?'Faltou o arquivo do chart (notes.chart, notes.mid ou um pacote .sng).':m==='noaudio'?'Faltou o áudio. Escolha também o song.ogg, os stems ou o MP3 da música.':m==='decode'?'Não consegui ler o áudio. Tente OGG, OPUS, MP3 ou WAV no Chrome ou Edge.':m==='quota'?'O navegador ficou sem espaço para guardar mais músicas.':m==='format'?'Esse arquivo não é um pacote .sng válido.':'Não consegui ler esse chart. Use .sng, notes.chart ou notes.mid.';}
+const fileEntry=f=>({name:f.name,ab:()=>f.arrayBuffer()});
+async function importSngFile(f,dirInfo){
+  const pk=parseSng(await f.arrayBuffer());
+  const s=await songFromEntries(pk.files,pk.meta);
+  const meta=makeMeta(s.chart,s.info,dirInfo?{path:dirInfo.key}:{});
+  await libSave(meta,dirInfo?{src:'dirsng',path:dirInfo.path,file:f.name,chart:s.chart}:{src:'sng',blob:f,chart:s.chart});
+  return meta;
+}
+async function importFolderFiles(files,dirInfo){
+  const s=await songFromEntries(files.map(fileEntry));
+  const meta=makeMeta(s.chart,s.info,dirInfo?{path:dirInfo.key}:{});
+  const keep=new Set(s.stems);
+  await libSave(meta,dirInfo?{src:'dir',path:dirInfo.path,stems:s.stems,chart:s.chart}:{src:'copy',stems:files.filter(f=>keep.has(f.name)).map(f=>({name:f.name,guitar:/^guitar\b/i.test(f.name),blob:f})),chart:s.chart});
+  return meta;
+}
+function importDone(added,failed,firstErr){
+  chartBusy=false;chartMsgT('');
+  libRefresh().then(()=>{
+    if(!added.length){chartErrT(chartErrText(firstErr));return;}
+    const one=added.length===1?added[0]:null;
+    if(one){const m=LIB.list.find(x=>x.id===one.id)||one;libSelect(m);}else buildMenu();
+    show('menu');
+    const uns=added.filter(m=>m.unsaved).length,why=added.some(m=>m.unsaved==='quota')?'o navegador ficou sem espaço':'o navegador não deixou guardar';
+    menuNote((one?`"${one.name}" entrou na sua biblioteca e já está selecionada.`:`${added.length} músicas entraram na sua biblioteca.${failed?` ${failed} não deram certo.`:''}`)+(uns?` Atenção: ${why}, então ${uns===1&&one?'ela':uns+' delas'} só fica até fechar a página.`:''),!!uns);
+  });
+}
 $('chartBack').onclick=()=>{buildMenu();show('menu');};
-$('chartFilesBtn').onclick=()=>{if(chartBusy)return;if(loading&&!loading.err){chartErrT('Espere terminar a análise da música carregada.');return;}chartErrT('');$('chartFiles').click();};
+$('chartFilesBtn').onclick=()=>{if(chartBusy)return;chartErrT('');$('chartFiles').click();};
 $('chartFiles').onchange=async()=>{
   const fs=[...($('chartFiles').files||[])];$('chartFiles').value='';if(!fs.length||chartBusy)return;
-  chartBusy=true;chartErrT('');chartMsgT('Lendo o chart e o áudio…');
-  try{
-    const cf=fs.find(f=>/notes\.chart$/i.test(f.name))||fs.find(f=>/\.chart$/i.test(f.name))||fs.find(f=>/\.(mid|midi)$/i.test(f.name));
-    if(!cf)throw new Error('nochart');
-    const chart=await readChart(cf);
-    const ini=fs.find(f=>/song\.ini$/i.test(f.name)),meta=ini?parseIni(await ini.text()):{};
-    let auds=fs.filter(f=>isAudio(f)&&!isChartFile(f)&&!/preview|crowd/i.test(f.name));
-    if(!auds.length)throw new Error('noaudio');
-    initAudio();
-    const stems=[];
-    for(const f of auds){
-      const data=await f.arrayBuffer();
-      let buffer;try{buffer=await new Promise((res,rej)=>{const r=AC.decodeAudioData(data,res,rej);if(r&&r.then)r.then(res,rej);});}catch(e){continue;}
-      stems.push({buffer,guitar:/^guitar\./i.test(f.name)});
-    }
-    if(!stems.length)throw new Error('decode');
-    const iniOff=meta.delay?(+meta.delay||0)/1000:0;
-    if(iniOff){for(const k in chart.diffs)chart.diffs[k].forEach(n=>n.time+=iniOff);for(const k in chart.sp)chart.sp[k].forEach(w=>{w[0]+=iniOff;w[1]+=iniOff;});chart.beats=chart.beats.map(b=>b+iniOff);chart.last+=iniOff;}
-    const name=meta.name||chart.name||cf.name.replace(/\.[^.]+$/,'');
-    if(meta.artist&&!chart.artist)chart.artist=meta.artist;
-    const dur=Math.max(...stems.map(x=>x.buffer.duration));
-    G.custom={name,chart,stems,buffer:stems[0].buffer,dur};G.songDef=CUSTOM;
-    chartBusy=false;chartMsgT('');savePrefs();buildMenu();show('menu');
-    menuNote(`Chart "${name}" carregado: ${Object.keys(chart.diffs).map(k=>DIFFS[k].label).join(', ')}. Escolha a dificuldade e aperte Tocar.`);
-  }catch(e){chartBusy=false;chartMsgT('');chartErrT(chartErrText(e));}
+  chartBusy=true;chartErrT('');chartMsgT('Lendo os arquivos…');
+  const added=[];let failed=0,firstErr=null;
+  const sngs=fs.filter(f=>/\.sng$/i.test(f.name));
+  for(const f of sngs){try{added.push(await importSngFile(f));}catch(e){failed++;firstErr=firstErr||e;}chartMsgT(`Lendo os arquivos… ${added.length+failed} de ${sngs.length}`);}
+  const rest=fs.filter(f=>!/\.sng$/i.test(f.name));
+  if(rest.some(f=>isChartFile(f.name))){try{added.push(await importFolderFiles(rest));}catch(e){failed++;firstErr=firstErr||e;}}
+  else if(!sngs.length)firstErr=new Error('nochart');
+  importDone(added,failed,firstErr);
+};
+// pasta inteira do Clone Hero
+$('chartDirBtn').onclick=async()=>{
+  if(chartBusy)return;chartErrT('');
+  if(!window.showDirectoryPicker){$('chartDir').click();return;}
+  let h;try{h=await window.showDirectoryPicker({id:'riff-songs',mode:'read'});}catch(e){return;}
+  try{await idbTx('kv','readwrite',tx=>tx.objectStore('kv').put(h,'dir'));}catch(e){}
+  scanFolder(h);
+};
+$('chartRescanBtn').onclick=async()=>{if(chartBusy)return;chartErrT('');try{scanFolder(await libDir(true));}catch(e){chartErrT(libErrText(e));}};
+async function scanFolder(root){
+  chartBusy=true;chartMsgT('Procurando músicas na pasta…');
+  const found=[];let dirs=0;
+  async function walk(dir,path,depth){
+    const ents=[];try{for await(const e of dir.values())ents.push(e);}catch(e){return;}
+    dirs++;if(dirs%20===0){chartMsgT(`Procurando músicas na pasta… ${found.length} encontradas`);await new Promise(r=>setTimeout(r,0));}
+    const files=ents.filter(e=>e.kind==='file'),names=files.map(e=>e.name);
+    if(pickChart(names)&&names.some(isStem))found.push({dir,path,files});
+    for(const f of files)if(/\.sng$/i.test(f.name))found.push({dir,path,sng:f});
+    if(depth<8)for(const e of ents)if(e.kind==='directory')await walk(e,path.concat(e.name),depth+1);
+  }
+  await walk(root,[],0);
+  const known=new Map(LIB.list.filter(m=>m.src==='dir'||m.src==='dirsng').map(m=>[m.path,m])),seen=new Set(),added=[];let failed=0,firstErr=null,i=0;
+  for(const s of found){
+    i++;if(i%3===0)chartMsgT(`Lendo as músicas… ${i} de ${found.length}`);
+    const key=s.path.concat(s.sng?[s.sng.name]:[]).join('/');seen.add(key);
+    try{
+      const files=s.sng?[await s.sng.getFile()]:await Promise.all(s.files.map(f=>f.getFile()));
+      const mod=Math.max(...files.filter(f=>isChartFile(f.name)||/\.sng$|^song\.ini$/i.test(f.name)).map(f=>f.lastModified||0));
+      const k=known.get(key);if(k&&k.mod===mod){added.push(k);continue;}
+      const meta=s.sng?await importSngFile(files[0],{path:s.path,key}):await importFolderFiles(files,{path:s.path,key});
+      meta.mod=mod;try{await idbTx('meta','readwrite',tx=>tx.objectStore('meta').put(meta));}catch(e){}
+      added.push(meta);
+    }catch(e){failed++;firstErr=firstErr||e;}
+  }
+  for(const [key,m]of known)if(!seen.has(key)){try{await idbDelSong(m.id);}catch(e){}}
+  importDone(added,failed,firstErr||new Error('nochart'));
+}
+// navegadores sem acesso a pastas: copia os arquivos escolhidos
+$('chartDir').onchange=async()=>{
+  const fs=[...($('chartDir').files||[])];$('chartDir').value='';if(!fs.length||chartBusy)return;
+  chartBusy=true;chartMsgT('Lendo a pasta…');
+  const groups=new Map(),sngs=[];
+  for(const f of fs){const rp=(f.webkitRelativePath||f.name).split('/');rp.pop();const k=rp.join('/');if(/\.sng$/i.test(f.name))sngs.push(f);else{if(!groups.has(k))groups.set(k,[]);groups.get(k).push(f);}}
+  const songs=[...groups.values()].filter(g=>pickChart(g.map(f=>f.name))&&g.some(f=>isStem(f.name)));
+  const total=songs.length+sngs.length,added=[];let failed=0,firstErr=null,i=0;
+  for(const f of sngs){i++;chartMsgT(`Copiando as músicas… ${i} de ${total}`);try{added.push(await importSngFile(f));}catch(e){failed++;firstErr=firstErr||e;}}
+  for(const g of songs){i++;chartMsgT(`Copiando as músicas… ${i} de ${total}`);try{added.push(await importFolderFiles(g));}catch(e){failed++;firstErr=firstErr||e;}}
+  importDone(added,failed,firstErr||new Error('nochart'));
 };
 $('chartYTBtn').onclick=()=>{
   if(chartBusy)return;
@@ -1655,18 +2020,22 @@ $('chartUrl').addEventListener('keydown',e=>{if(e.key==='Enter')$('chartYTBtn').
 $('chartOnly').onchange=async()=>{
   const fi=$('chartOnly'),f=fi.files&&fi.files[0],id=fi.dataset.v;fi.value='';if(!f||!id||chartBusy)return;
   try{
-    const chart=await readChart(f);
+    let chart,info={};
+    if(/\.sng$/i.test(f.name)){const pk=parseSng(await f.arrayBuffer());const cn=pickChart(pk.files.map(x=>x.name));if(!cn)throw new Error('nochart');chart=await chartFrom(cn,await pk.files.find(x=>x.name===cn).ab());info=pk.meta;}
+    else chart=await chartFrom(f.name,await f.arrayBuffer());
+    const nm=info.name||chart.name,ar=info.artist||chart.artist;
     const best=chart.diffs.expert||chart.diffs[pickDiff(chart.diffs,'expert')];
-    const sync={notes:best,diffs:chart.diffs,sp:chart.sp,dur:chart.last+3,start:best.length?best[0].time:0,name:chart.name||f.name.replace(/\.[^.]+$/,''),title:chart.name?(chart.artist?chart.artist+' - ':'')+chart.name:'',off:null};
+    const sync={notes:best,diffs:chart.diffs,sp:chart.sp,dur:chart.last+3,start:best.length?best[0].time:0,name:nm||f.name.replace(/\.[^.]+$/,''),title:nm?(ar?ar+' - ':'')+nm:'',off:null};
     if($('chartPanel').hidden||G.state!=='menu')return;
     loadYTApi().catch(()=>{});
     startRecording(id,1,sync);
   }catch(e){chartErrT(chartErrText(e));}
 };
-window.__rrChart={parseChartText,parseMidi};
+window.__rrChart={parseChartText,parseMidi,parseSng,chartHash};window.__rrLib=LIB;
 window.__rrAnalyze=analyze;window.__rrYT=YTP;window.__rrNet=()=>G.net;
 $('offset').oninput=e=>{G.offset=+e.target.value;$('offVal').textContent=G.offset+' ms';savePrefs();};
-$('playBtn').onclick=()=>{if(G.online){if(G.net&&G.net.connected&&G.net.host)netHostStart();return;}startGame();};
+$('playBtn').onclick=()=>{if(G.online){if(G.net&&G.net.connected&&G.net.host)netHostStart();return;}if(G.songDef.lib&&!curCustom()){const m=G.songDef.meta;libEnsure(m,true).then(()=>{if(G.state==='menu'&&G.songDef.lib&&G.songDef.meta.id===m.id)startGame();},()=>{});return;}startGame();};
+libRefresh();
 {const q=new URLSearchParams(location.search).get('sala');if(q){G.online=true;G.nPlayers=1;G.netCodeDraft=q;try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>netJoin(q),0);}}
 buildMenu();
 requestAnimationFrame(frame);
