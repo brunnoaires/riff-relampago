@@ -51,7 +51,8 @@ function walk(dir, rel, depth) {
   if (rel.length && files.some(isChart) && files.some(isStem)) {
     const ini = files.find(n => /^song\.ini$/i.test(n));
     const info = ini ? parseIni(fs.readFileSync(path.join(dir, ini), 'utf8')) : {};
-    out.push(entry(rel.join('/'), info, { arquivos: files.filter(n => isChart(n) || isStem(n) || /^song\.ini$/i.test(n)) }));
+    const capa = files.find(n => /^album\.(png|jpe?g)$/i.test(n));
+    out.push(entry(rel.join('/'), info, { arquivos: files.filter(n => isChart(n) || isStem(n) || /^song\.ini$/i.test(n)), capa }));
   }
   if (depth < 4) for (const e of ents) if (e.isDirectory()) walk(path.join(dir, e.name), rel.concat(e.name), depth + 1);
 }

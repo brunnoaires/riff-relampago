@@ -59,6 +59,12 @@ h2{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mu
 .song .nm{font-weight:700;font-size:1.05rem;min-width:0;overflow-wrap:anywhere}
 .song .meta{grid-column:1;color:var(--muted);font-size:.82rem}
 .song .tier{grid-row:1/3;grid-column:2;align-self:center;text-align:right;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+#menu.overlay{background:radial-gradient(ellipse at 50% 30%,rgba(14,8,16,.1),rgba(14,8,16,.6))}
+#menu .panel{background:rgba(22,11,26,.74);backdrop-filter:blur(10px)}
+.song.hascov{grid-template-columns:44px 1fr auto}
+.song.hascov .cov{grid-row:1/3;grid-column:1;width:44px;height:44px;border-radius:6px;object-fit:cover;align-self:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.song.hascov .meta{grid-column:2}
+.song.hascov .tier{grid-column:3}
 .song .tier b{display:block;color:var(--fire);letter-spacing:2px;font-size:.95rem}
 .swap{align-self:flex-start;margin-top:2px;background:none;border:0;color:var(--fire);font:600 .82rem var(--ui);cursor:pointer;padding:4px 0;text-decoration:underline}
 .seg{display:flex;flex-wrap:wrap;gap:6px}
@@ -978,23 +984,57 @@ function starPath(x,y,R,sq){c.beginPath();for(let i=0;i<10;i++){const a=-Math.PI
 function shade(h,k){const n=parseInt(h.slice(1),16),f=v=>Math.max(0,Math.min(255,Math.round(k>1?v+(255-v)*(k-1):v*k)));return`rgb(${f(n>>16)},${f(n>>8&255)},${f(n&255)})`;}
 function hexA(h,a){const n=parseInt(h.slice(1),16);return`rgba(${n>>16},${n>>8&255},${n&255},${a})`;}
 
+// capa da música escolhida, desfocada atrás do menu (troca com um fade)
+const COVER={src:null,img:null,prev:null,at:0};
+function coverSrc(){const d=G.songDef;return d&&d.lib?(d.meta.cover||d.meta.coverURL||null):null;}
+function coverUpdate(){
+  const src=G.state==='menu'?coverSrc():null;if(src===COVER.src)return;
+  COVER.src=src;
+  if(!src){if(COVER.img){COVER.prev=COVER.img;COVER.img=null;COVER.at=performance.now();}return;}
+  const im=new Image();im.onload=()=>{if(COVER.src!==src)return;
+    // desfoque barato: reduz e amplia de volta
+    const sm=document.createElement('canvas');sm.width=sm.height=24;const x=sm.getContext('2d');x.drawImage(im,0,0,24,24);
+    const md=document.createElement('canvas');md.width=md.height=96;const y=md.getContext('2d');y.imageSmoothingQuality='high';y.drawImage(sm,0,0,96,96);
+    COVER.prev=COVER.img;COVER.img=md;COVER.at=performance.now();};
+  im.onerror=()=>{if(COVER.src===src){COVER.prev=COVER.img;COVER.img=null;COVER.at=performance.now();}};
+  im.src=src;
+}
+function drawCover(now){
+  const k=Math.min(1,(performance.now()-COVER.at)/700),z=1.12+Math.sin(now*.07)*.04,S=Math.max(W,H)*z;
+  const put=(img,a)=>{if(!img||a<=0)return;c.globalAlpha=a;c.drawImage(img,(W-S)/2+Math.sin(now*.05)*W*.02,(H-S)/2,S,S);};
+  put(COVER.prev,(1-k)*.9);put(COVER.img,k*.9);c.globalAlpha=1;
+  if(COVER.img||(COVER.prev&&k<1)){const v=c.createRadialGradient(W/2,H*.45,Math.min(W,H)*.2,W/2,H*.45,Math.max(W,H)*.75);v.addColorStop(0,'rgba(20,8,24,0)');v.addColorStop(1,'rgba(8,3,10,.7)');c.fillStyle=v;c.fillRect(0,0,W,H);}
+}
+// fumaça e poeira nas luzes do palco (só no menu)
+const HAZE=Array.from({length:7},(_,i)=>({x:(i*.17+.05)%1,y:.55+(i%3)*.12,r:.28+(i%4)*.06,v:.006+(i%3)*.004,ph:i*1.7}));
+const DUST=Array.from({length:60},(_,i)=>{const R=rng(100+i);return{x:R(),y:R(),v:.01+R()*.03,s:.6+R()*1.6,ph:R()*6.28};});
+function drawHaze(now,pulse){
+  for(const h of HAZE){const x=((h.x+now*h.v)%1.4-.2)*W,y=h.y*H+Math.sin(now*.3+h.ph)*H*.03,r=h.r*Math.max(W,H);
+    const g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,`rgba(150,110,170,${.07+.03*pulse})`);g.addColorStop(1,'rgba(150,110,170,0)');c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2);}
+  c.globalCompositeOperation='lighter';
+  for(const d of DUST){const y=((d.y-now*d.v)%1+1)%1*H,x=(d.x+Math.sin(now*.4+d.ph)*.01)*W;c.fillStyle=`rgba(255,220,180,${.18+.25*Math.sin(now*2+d.ph)**2})`;c.fillRect(x,y,d.s,d.s);}
+  c.globalCompositeOperation='source-over';
+}
 function drawBG(now,beatPh,excite,sp){
+  const menu=G.state==='menu';
   if(G.song&&G.song.yt&&!$('yt').hidden){c.clearRect(0,0,W,H);c.fillStyle='rgba(14,8,16,.62)';c.fillRect(0,0,W,H);}
   else{const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#1d0c22');g.addColorStop(.55,'#130816');g.addColorStop(1,'#070409');c.fillStyle=g;c.fillRect(0,0,W,H);}
+  if(menu){coverUpdate();drawCover(now);}
   const pulse=Math.pow(1-beatPh,3);
   c.globalCompositeOperation='lighter';
   const cols=sp?['127,233,255','160,200,255','127,233,255','200,240,255']:['255,120,40','255,60,90','255,190,60','180,80,255'];
   for(let i=0;i<4;i++){
-    const ox=W*(.12+.25*i),a=Math.PI/2+Math.sin(now*.5+i*1.9)*.45,len=H*1.25,sp2=.13;
+    const ox=W*(.12+.25*i),a=Math.PI/2+Math.sin(now*(menu?.8:.5)+i*1.9)*(menu?.6:.45),len=H*1.25,sp2=.13;
     const gg=c.createRadialGradient(ox,-10,0,ox,-10,len);gg.addColorStop(0,`rgba(${cols[i]},${.22+.18*pulse*excite})`);gg.addColorStop(1,`rgba(${cols[i]},0)`);
     c.fillStyle=gg;c.beginPath();c.moveTo(ox,-10);c.lineTo(ox+Math.cos(a-sp2)*len,-10+Math.sin(a-sp2)*len);c.lineTo(ox+Math.cos(a+sp2)*len,-10+Math.sin(a+sp2)*len);c.closePath();c.fill();
   }
   c.globalCompositeOperation='source-over';
+  if(menu)drawHaze(now,pulse);
   for(const p of crowd){
     const bob=Math.abs(Math.sin(beatPh*Math.PI+p.ph*.3))*p.amp*excite;
     const y=H-p.h*p.s+bob;c.fillStyle='#050208';
     ell(p.x,y,11*p.s,13*p.s);c.beginPath();c.roundRect?c.roundRect(p.x-19*p.s,y+10*p.s,38*p.s,p.h,10*p.s):c.rect(p.x-19*p.s,y+10*p.s,38*p.s,p.h);c.fill();
-    if(excite>.8&&p.ph>2.6){c.fillRect(p.x+12*p.s,y-30*p.s+bob,6*p.s,32*p.s);}
+    if((excite>.8||menu)&&p.ph>2.6){c.fillRect(p.x+12*p.s,y-30*p.s+bob,6*p.s,32*p.s);}
   }
 }
 
@@ -1153,7 +1193,8 @@ let lastFrame=performance.now();
 function frame(){
   requestAnimationFrame(frame);
   const now=performance.now(),dt=Math.min(.05,(now-lastFrame)/1000);lastFrame=now;
-  let t=0,beatPh=(now/1000*2)%1,excite=.55,sp=false;
+  const mbpm=G.state==='menu'&&G.songDef&&G.songDef.bpm||120;
+  let t=0,beatPh=(now/1000*mbpm/60)%1,excite=G.state==='menu'?.85:.55,sp=false;
   if(G.song&&G.song.yt&&(G.state==='play'||G.state==='record')&&!G.paused){
     if(!G.ytGo&&now>=G.ytStartAt){G.ytGo=true;G.ytWatch=now;if(G.ytSeek){YTP.player.seekTo(G.ytSeek+(now-G.ytStartAt)/1000,true);G.ytSeek=0;}YTP.player.playVideo();}
     if(G.ytGo&&!YTP.playing&&YTP.state!==3&&YTP.state!==0&&now-G.ytWatch>3000)$('tapStart').hidden=false;
@@ -1703,7 +1744,8 @@ function buildMenu(){
     if(hq&&!(m.name+' '+m.artist).toLowerCase().includes(hq))continue;
     const b=document.createElement('button');b.className='song';b.setAttribute('aria-pressed',!!(G.songDef.lib&&G.songDef.meta.id===m.id));
     const best=bestOf('lib:'+m.id),ld=LIB.loading&&LIB.loading.id===m.id,er=LIB.err&&LIB.err.id===m.id?LIB.err.msg:'';
-    b.innerHTML=`<span class="nm">${esc(m.name)}</span><span class="meta">${er?`<span class="bad">${esc(er)}</span>`:[m.artist&&esc(m.artist),m.dur&&fmtTime(m.dur),m.charter&&'chart de '+esc(m.charter)].filter(Boolean).join(' · ')||'Música da casa'}</span><span class="tier"><b>♪</b>${ld?'carregando…':best?'recorde '+best.toLocaleString('pt-BR'):'sem recorde'}</span>`;
+    const cv=m.cover||m.coverURL;if(cv)b.classList.add('hascov');
+    b.innerHTML=`${cv?`<img class="cov" alt="" loading="lazy" src="${esc(cv)}">`:''}<span class="nm">${esc(m.name)}</span><span class="meta">${er?`<span class="bad">${esc(er)}</span>`:[m.artist&&esc(m.artist),m.dur&&fmtTime(m.dur),m.charter&&'chart de '+esc(m.charter)].filter(Boolean).join(' · ')||'Música da casa'}</span><span class="tier"><b>♪</b>${ld?'carregando…':best?'recorde '+best.toLocaleString('pt-BR'):'sem recorde'}</span>`;
     b.onclick=()=>libSelect(m);songs.appendChild(b);
   }
   if(songs.querySelectorAll('.song').length===0){const n=document.createElement('p');n.className='hint';n.textContent='Nenhuma música com esse nome.';songs.appendChild(n);}
@@ -1817,7 +1859,8 @@ function buildLibCards(songs,bestOf,esc){
     const b=document.createElement('button');b.className='song';const on=selm?LIB.sel.has(m.id):!!(G.songDef.lib&&G.songDef.meta.id===m.id);b.setAttribute('aria-pressed',on);
     const best=bestOf('lib:'+m.id),ld=LIB.loading&&LIB.loading.id===m.id,er=LIB.err&&LIB.err.id===m.id?LIB.err.msg:'';
     const dl=m.diffs.map(k=>DIFFS[k]?DIFFS[k].label:k).join(', ');
-    b.innerHTML=`<span class="nm">${esc(m.name)}</span><span class="meta">${er?`<span class="bad">${esc(er)}</span>`:`${m.artist?esc(m.artist)+' · ':''}${m.dur?fmtTime(m.dur)+' · ':''}${dl}`}</span><span class="tier"><b>${selm?(on?'☑':'☐'):'♪'}</b>${selm?(on?'escolhida':''):ld?'carregando…':best?'recorde '+best.toLocaleString('pt-BR'):'biblioteca'}</span>`;
+    if(m.cover)b.classList.add('hascov');
+    b.innerHTML=`${m.cover?`<img class="cov" alt="" loading="lazy" src="${esc(m.cover)}">`:''}<span class="nm">${esc(m.name)}</span><span class="meta">${er?`<span class="bad">${esc(er)}</span>`:`${m.artist?esc(m.artist)+' · ':''}${m.dur?fmtTime(m.dur)+' · ':''}${dl}`}</span><span class="tier"><b>${selm?(on?'☑':'☐'):'♪'}</b>${selm?(on?'escolhida':''):ld?'carregando…':best?'recorde '+best.toLocaleString('pt-BR'):'biblioteca'}</span>`;
     b.onclick=selm?()=>{LIB.sel.has(m.id)?LIB.sel.delete(m.id):LIB.sel.add(m.id);LIB.confirm=null;buildMenu();}:()=>libSelect(m);
     songs.appendChild(b);
     if(on&&!selm){const a=document.createElement('div');a.className='actions';const del=document.createElement('button');del.className='swap';del.textContent=m._confirm?'Confirmar: tirar da biblioteca':'Tirar da biblioteca';
@@ -1935,6 +1978,11 @@ function makeMeta(chart,info,extra){
   return Object.assign({id,name:String(info.name||chart.name||'Música sem nome').trim().slice(0,120),artist:String(info.artist||chart.artist||'').trim().slice(0,80),charter:String(info.charter||info.frets||'').replace(/<[^>]*>/g,'').trim().slice(0,60),
     diffs:Object.keys(chart.diffs),dur:(+info.song_length||0)/1000||chart.last+2,added:Date.now()},extra);
 }
+// capa (album.png / album.jpg) reduzida para guardar junto com a música
+async function coverThumb(entries){
+  const e=entries.find(f=>/^album\.(png|jpe?g)$/i.test(f.name));if(!e)return null;
+  try{const bm=await createImageBitmap(new Blob([await e.ab()]));const cv2=document.createElement('canvas');cv2.width=cv2.height=160;cv2.getContext('2d').drawImage(bm,0,0,160,160);return cv2.toDataURL('image/jpeg',.82);}catch(err){return null;}
+}
 // lê uma música a partir de uma lista de arquivos [{name, ab()}] (pasta ou pacote .sng)
 async function songFromEntries(entries,info){
   const cn=pickChart(entries.map(e=>e.name));if(!cn)throw new Error('nochart');
@@ -1987,6 +2035,7 @@ async function libLoad(m,gesture,job){
     if(data.src==='dirsng'){let f;try{f=await (await d.getFileHandle(data.file)).getFile();}catch(e){throw new Error('gone');}files=parseSng(await f.arrayBuffer()).files;}
     else files=data.stems.map(n=>({name:n,ab:async()=>(await (await d.getFileHandle(n)).getFile()).arrayBuffer()}));
   }else files=data.stems.map(s=>({name:s.name,ab:()=>s.blob.arrayBuffer()}));
+  if(!m.cover&&!data.cover0){data.cover0=1;const cv=await coverThumb(files);if(cv){m.cover=cv;try{await idbTx('meta','readwrite',tx=>tx.objectStore('meta').put(m));}catch(e){}if(G.state==='menu'&&!$('menu').hidden)buildMenu();}}
   return decodeStems(m,data.chart,files,live);
 }
 async function decodeStems(m,chart,files,live){
@@ -2078,7 +2127,7 @@ async function houseList(){
   LIB.house=arr.slice(0,300).filter(x=>x&&typeof x==='object'&&housePath(x.caminho)&&(/\.sng$/i.test(x.caminho)||Array.isArray(x.arquivos))).map(x=>({
     id:'casa:'+x.caminho,house:true,path:x.caminho,sng:/\.sng$/i.test(x.caminho),files:Array.isArray(x.arquivos)?x.arquivos.filter(n=>typeof n==='string'&&housePath(n)&&!n.includes('/')).slice(0,40):[],
     name:String(x.nome||x.caminho.split('/').pop().replace(/\.sng$/i,'')).slice(0,120),artist:String(x.artista||'').slice(0,80),charter:String(x.charter||'').replace(/<[^>]*>/g,'').slice(0,60),
-    dur:Math.max(0,num(x.duracao)),diffs:[]}));
+    dur:Math.max(0,num(x.duracao)),diffs:[],coverURL:typeof x.capa==='string'&&housePath(x.capa)&&!x.capa.includes('/')?houseURL(x.caminho+'/'+x.capa):null}));
   const m=typeof sel.song==='string'&&LIB.house.find(x=>'lib:'+x.id===sel.song);
   if(m&&G.state==='menu'&&G.songDef===SONGS[0]&&!G.online){G.songDef=libDef(m);libEnsure(m,false,true).catch(()=>{});}
   if(G.state==='menu'&&!$('menu').hidden)buildMenu();
@@ -2092,6 +2141,7 @@ async function houseSong(m,live){
   live();
   const s=await songFromEntries(files,info);
   applyDelay(s.chart,s.info.delay);m.diffs=Object.keys(s.chart.diffs);
+  if(!m.coverURL&&!m.cover){m.cover=await coverThumb(files);if(m.cover&&G.state==='menu'&&!$('menu').hidden)buildMenu();}
   return decodeStems(m,s.chart,files,live);
 }
 // ---------- importar charts ----------
@@ -2100,13 +2150,13 @@ const fileEntry=f=>({name:f.name,ab:()=>f.arrayBuffer()});
 async function importSngFile(f,dirInfo){
   const pk=parseSng(await f.arrayBuffer());
   const s=await songFromEntries(pk.files,pk.meta);
-  const meta=makeMeta(s.chart,s.info,dirInfo?{path:dirInfo.key}:{});
+  const meta=makeMeta(s.chart,s.info,dirInfo?{path:dirInfo.key}:{});meta.cover=await coverThumb(pk.files);
   await libSave(meta,dirInfo?{src:'dirsng',path:dirInfo.path,file:f.name,chart:s.chart}:{src:'sng',blob:f,chart:s.chart});
   return meta;
 }
 async function importFolderFiles(files,dirInfo){
   const s=await songFromEntries(files.map(fileEntry));
-  const meta=makeMeta(s.chart,s.info,dirInfo?{path:dirInfo.key}:{});
+  const meta=makeMeta(s.chart,s.info,dirInfo?{path:dirInfo.key}:{});meta.cover=await coverThumb(files.map(fileEntry));
   const keep=new Set(s.stems);
   await libSave(meta,dirInfo?{src:'dir',path:dirInfo.path,stems:s.stems,chart:s.chart}:{src:'copy',stems:files.filter(f=>keep.has(f.name)).map(f=>({name:f.name,guitar:/^guitar\b/i.test(f.name),blob:f})),chart:s.chart});
   return meta;
