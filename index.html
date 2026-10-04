@@ -22,7 +22,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--ui);overflow:hidden;
 #yt{position:fixed;inset:0;z-index:0;background:#000}
 #yt iframe{width:100%;height:100%;border:0;pointer-events:none}
 #stage{position:fixed;inset:0;z-index:1}
-.field{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--panel-edge);background:rgba(255,255,255,.05);color:var(--fg);font:inherit}
+.field{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid var(--panel-edge);background:rgba(255,255,255,.05);color:var(--fg);font:inherit}
 textarea.field{min-height:84px;resize:vertical;font:500 .78rem/1.4 ui-monospace,Menlo,monospace}
 .err{color:#ff8f8f;font-size:.85rem;margin:8px 0 0}
 .note{color:var(--star);font-size:.88rem;margin:12px 0 0}
@@ -61,6 +61,24 @@ h2{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mu
 .song .tier{grid-row:1/3;grid-column:2;align-self:center;text-align:right;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
 #menu.overlay{background:radial-gradient(ellipse at 50% 30%,rgba(14,8,16,.1),rgba(14,8,16,.6))}
 #menu .panel{background:rgba(22,11,26,.74);backdrop-filter:blur(10px)}
+/* placar global à esquerda do menu (embaixo no celular) */
+.menurow{display:flex;gap:16px;align-items:flex-start;justify-content:center;width:min(1236px,100%);margin-block:auto}
+.menurow>.panel{flex:1 1 900px;min-width:0;margin-block:0}
+.placar{flex:0 0 300px;background:rgba(22,11,26,.74);backdrop-filter:blur(10px);border:1px solid var(--panel-edge);border-radius:14px;padding:20px 18px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.placar h3{font:700 1.08rem/1.25 var(--ui);margin:6px 0 12px;overflow-wrap:anywhere}
+.placar .seg button{padding:6px 4px;font-size:.78rem}
+.placar .rank{margin-top:10px;gap:4px}
+.placar .rank li{grid-template-columns:2.1em 1fr auto;padding:7px 9px;gap:6px}
+.placar .rank .pos{font-size:.9rem}.placar .rank .sc{font-size:.95rem}
+.placar .rank .who b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.placar .rank .who small{font-size:.72rem}
+.placar .rank li.p1 .pos{color:#ffd23b}.placar .rank li.p2 .pos{color:#d8dde6}.placar .rank li.p3 .pos{color:#e0965a}
+.placar .rank li.gap{display:block;text-align:center;padding:0;background:none;color:var(--muted)}
+.placar .rank li.me{border-color:rgba(255,138,31,.55)}
+.plme{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--panel-edge);font-size:.85rem;color:var(--muted)}
+.plme b{color:var(--fg);overflow-wrap:anywhere}.plme .swap{margin:0;align-self:center}
+#nickPanel{z-index:6;background:rgba(14,8,16,.7)}
+@media (max-width:1000px){.menurow{flex-direction:column;align-items:center}.menurow>.panel{flex:none;width:min(900px,100%)}.placar{order:2;flex:none;width:min(900px,100%)}}
 .song.hascov{grid-template-columns:44px 1fr auto}
 .song.hascov .cov{grid-row:1/3;grid-column:1;width:44px;height:44px;border-radius:6px;object-fit:cover;align-self:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
 .song.hascov .meta{grid-column:2}
@@ -143,6 +161,15 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
 <input type="file" id="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" hidden>
 
 <section id="menu" class="overlay">
+  <div class="menurow">
+  <aside id="placar" class="placar" aria-labelledby="plTitle">
+    <p class="eyebrow" id="plTitle">Placar global</p>
+    <h3 id="plSong"></h3>
+    <div class="seg" id="plDiffs" aria-label="Dificuldade do placar"></div>
+    <ol class="rank" id="plList" aria-live="polite"></ol>
+    <p class="hint" id="plMsg"></p>
+    <div class="plme"><span>Seu nick: <b id="plNick"></b></span><button class="swap" id="nickEdit">Trocar</button></div>
+  </aside>
   <div class="panel">
     <p class="eyebrow">Turnê de garagem · sozinho, em dupla ou online</p>
     <h1>Riff Relâmpago</h1>
@@ -163,6 +190,18 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
     <div class="keys" id="keys"></div>
     <p class="note" id="menuNote" hidden></p>
     <button id="playBtn" class="cta">Tocar</button>
+  </div>
+  </div>
+</section>
+
+<section id="nickPanel" class="overlay" hidden>
+  <div class="panel small">
+    <p class="eyebrow">Bem-vindo ao palco</p>
+    <h1>Qual é o seu nick?</h1>
+    <p class="lede">Ele aparece no placar global de cada música e nas salas online. Dá para trocar depois.</p>
+    <div class="stack"><input class="field" id="nickIn" maxlength="20" autocomplete="nickname" placeholder="Seu nick" aria-label="Seu nick"></div>
+    <p class="err" id="nickErr" hidden></p>
+    <div class="stack"><button class="btn primary" id="nickOk">Entrar</button><button class="btn" id="nickCancel" hidden>Cancelar</button></div>
   </div>
 </section>
 
@@ -1559,7 +1598,7 @@ addEventListener('blur',()=>{G.players.forEach(p=>p.held=[0,0,0,0,0]);touches.cl
 // ---------- telas ----------
 const $=id=>document.getElementById(id);
 const pauseBtn=$('pauseBtn'),spBtns=[$('spBtn0'),$('spBtn1')];
-function show(id){if(id!=='menu')$('menuNote').hidden=true;for(const s of['menu','pause','results','ytPanel','chartPanel','bindPanel'])$(s).hidden=s!==id;if(id){pauseBtn.hidden=true;spBtns.forEach(b=>b.hidden=true);$('tapStart').hidden=true;}}
+function show(id){if(id!=='menu'){$('menuNote').hidden=true;if(!$('nickPanel').hidden)nickClose();}for(const s of['menu','pause','results','ytPanel','chartPanel','bindPanel'])$(s).hidden=s!==id;if(id){pauseBtn.hidden=true;spBtns.forEach(b=>b.hidden=true);$('tapStart').hidden=true;}}
 function togglePause(){
   if(G.state!=='play'&&G.state!=='record')return;
   if(G.online&&G.state==='play'){
@@ -1606,6 +1645,7 @@ function results(ok){
   const body=$('resBody');$('againBtn').disabled=false;
   if(G.online&&G.net&&G.players.length===1){
     G.myEnd={ok};const me=G.players[0];
+    if(ok&&!me.out)placarSend(G.songDef,me).catch(()=>{});
     setTimeout(()=>{if(G.players[0]!==me||(G.state!=='done'&&G.state!=='fail'))return;G.resultsAt=performance.now();renderOnlineResults();show('results');$('againBtn').focus();},ok?900:1200);
     return;
   }
@@ -1614,12 +1654,17 @@ function results(ok){
     const total=P.notes.length,pct=total?Math.round(P.hits/total*100):0;
     const key=`rr:best:${G.songDef.lib?G.songDef.id:G.songDef.custom?'custom:'+(cur?cur.name:''):G.songDef.id}:${P.diff}`,best=store.get(key,0);
     let record=false;if(ok&&P.score>best){store.set(key,P.score);record=true;}
-    const ratio=P.score/Math.max(1,total*50),stars=ok?(ratio>=2.8?5:ratio>=2?4:ratio>=1.4?3:ratio>=.8?2:1):0;
+    const stars=starsOf(P,ok);
     $('resEyebrow').textContent=`${name} · ${P.D.label}`;
     $('resTitle').textContent=ok?(stars>=5?'Lendário!':stars>=4?'Show incrível':stars>=3?'Mandou bem':'Você terminou'):'A plateia vaiou';
     body.innerHTML=`<div class="stars">${ok?[0,1,2,3,4].map(i=>`<span class="${i<stars?'on':''}">★</span>`).join(''):`<span style="font-size:1rem;letter-spacing:0;color:var(--muted)">Você chegou a ${Math.round(Math.min(1,Math.max(0,P.lastT/G.song.endTime))*100)}% da música</span>`}</div>
       <div class="bigscore">${P.score.toLocaleString('pt-BR')}</div>${record?'<span class="badge">Novo recorde</span>':''}
-      <div class="statgrid"><div><b>${pct}%</b><span>notas</span></div><div><b>${P.maxCombo}</b><span>maior sequência</span></div><div><b>${Math.max(best,record?P.score:0).toLocaleString('pt-BR')}</b><span>recorde</span></div></div>`;
+      <div class="statgrid"><div><b>${pct}%</b><span>notas</span></div><div><b>${P.maxCombo}</b><span>maior sequência</span></div><div><b>${Math.max(best,record?P.score:0).toLocaleString('pt-BR')}</b><span>recorde</span></div></div><p class="hint" id="resGlobal" hidden></p>`;
+    if(ok&&PLACAR.url&&placarSong(G.songDef)){
+      const el=$('resGlobal'),lbl=P.D.label;el.hidden=false;el.textContent='Enviando para o placar global…';
+      placarSend(G.songDef,P).then(r=>{if(!r)return;el.textContent=r.novo?(r.pos>=0?`Você está em ${r.pos+1}º lugar no placar global do ${lbl}.`:'Seu recorde foi para o placar global.'):`Seu melhor no placar global do ${lbl} continua ${r.best.toLocaleString('pt-BR')}.`;})
+        .catch(()=>{el.textContent='Não deu para enviar ao placar global agora.';});
+    }
   }else{
     const[a,b]=G.players;
     const win=!ok?-1:(a.out!==b.out?(a.out?1:0):(a.score===b.score?-1:(a.score>b.score?0:1)));
@@ -1652,6 +1697,93 @@ function renderOnlineResults(){
   if(on){const hn=netHostName(G.net),need=songDesc(),miss=G.net.host&&need.kind==='lib'&&(!curCustom()||!netAllHave(G.net,need));ab.textContent=!G.net.host?'Esperando '+hn+' começar':waiting?'Esperando todos terminarem':miss?'Alguém ainda não tem esse chart':'Jogar de novo com a sala';ab.disabled=!G.net.host||!!waiting||miss;}
   else{ab.textContent='Tocar sozinho';ab.disabled=false;}
 }
+
+// ---------- placar global ----------
+// As pontuações ficam num Firebase Realtime Database gratuito (o endereço vai em placar/config.json).
+// Não tem login: cada navegador ganha um id e só sobe a própria pontuação, e só se ela for maior.
+const PLACAR={url:'',qs:'',ready:false,cache:new Map(),dif:null,menuDif:null,fixed:new Set()};
+const cleanNick=v=>String(v==null?'':v).replace(/[\u0000-\u001f\u007f]/g,'').replace(/\s+/g,' ').trim().slice(0,20);
+function placarUid(){
+  let u=store.get('rr:uid','');
+  if(!/^[0-9a-z]{16}$/.test(u)){const A='0123456789abcdefghijklmnopqrstuvwxyz',r=new Uint32Array(16);crypto.getRandomValues(r);u='';for(let i=0;i<16;i++)u+=A[r[i]%36];store.set('rr:uid',u);}
+  return u;
+}
+function hash16(s){let a=0x811c9dc5,b=0x2545f491;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,16777619);b=Math.imul(b^c,0x5bd1e995);b^=b>>>15;}return(a>>>0).toString(16).padStart(8,'0')+(b>>>0).toString(16).padStart(8,'0');}
+const ytKeys=new WeakMap();
+// a mesma música tem o mesmo placar para todo mundo que tem o mesmo chart; MP3 do computador não tem placar
+function placarSong(def){
+  if(!def||def===CUSTOM)return null;
+  if(def.yt){const ch=def.chart;if(!ch||!ch.videoId)return null;let k=ytKeys.get(ch);if(!k){k=hash16('yt:'+ch.videoId+':'+JSON.stringify([ch.notes,ch.diffs||null]));ytKeys.set(ch,k);}return k;}
+  return hash16(String(def.id));
+}
+const placarURL=(path,q)=>`${PLACAR.url}/${path}.json${q||PLACAR.qs?'?':''}${[q,PLACAR.qs].filter(Boolean).join('&')}`;
+async function placarGet(path,q){const r=await fetch(placarURL(path,q),{cache:'no-store'});if(!r.ok)throw new Error('http '+r.status);return r.json();}
+async function placarPut(path,body){const r=await fetch(placarURL(path),{method:'PUT',body:JSON.stringify(body)});if(!r.ok)throw new Error('http '+r.status);}
+function placarTop(song,dif,force){
+  const k=song+'/'+dif,c=PLACAR.cache.get(k);
+  if(c&&!force&&(c.p||performance.now()-c.at<60000))return c;
+  const e={at:performance.now(),list:c?c.list:null,err:false,p:null};
+  e.p=placarGet(`placar/${song}/${dif}`,'orderBy=%22pontos%22&limitToLast=50').then(o=>{
+    e.list=Object.entries(o&&typeof o==='object'?o:{}).map(([id,v])=>{v=v||{};return{id,nick:cleanNick(v.nick)||'Jogador',pontos:Math.max(0,Math.round(num(v.pontos))),estrelas:Math.max(0,Math.min(5,num(v.estrelas)|0)),acerto:Math.max(0,Math.min(100,Math.round(num(v.acerto)))),seq:num(v.seq)|0,modo:v.modo==='strum'?'strum':'tap',t:num(v.t)};})
+      .sort((a,b)=>b.pontos-a.pontos||a.t-b.t);
+  }).catch(()=>{e.err=true;}).finally(()=>{e.p=null;e.at=performance.now();if(menuOpen())placarRender();});
+  PLACAR.cache.set(k,e);return e;
+}
+const starsOf=(p,ok)=>{const r=p.score/Math.max(1,p.notes.length*50);return ok?(r>=2.8?5:r>=2?4:r>=1.4?3:r>=.8?2:1):0;};
+// sobe a pontuação se for o melhor deste navegador nessa música e dificuldade; devolve a posição
+async function placarSend(def,p){
+  const song=placarSong(def);if(!song||!PLACAR.url||!DIFFS[p.diff])return null;
+  const uid=placarUid(),path=`placar/${song}/${p.diff}/${uid}`,pontos=Math.max(0,Math.round(p.score));
+  const old=await placarGet(path);
+  if(old&&num(old.pontos)>=pontos)return{novo:false,best:num(old.pontos)};
+  await placarPut(path,{nick:myName(),pontos,estrelas:Math.max(1,starsOf(p,true)),acerto:p.notes.length?Math.round(p.hits/p.notes.length*100):0,seq:p.maxCombo|0,modo:p.mode==='strum'?'strum':'tap',t:{'.sv':'timestamp'}});
+  const e=placarTop(song,p.diff,true);await e.p;
+  return{novo:true,best:pontos,pos:e.list?e.list.findIndex(x=>x.id===uid):-1};
+}
+function placarRender(){
+  const guest=G.online&&G.net&&G.net.connected&&!G.net.host,hs=guest?G.net.hostSong:null;
+  let def=guest?(hs?descToDef(hs):null):G.songDef;
+  if(!def&&hs&&hs.kind==='lib')def={id:'lib:'+hs.hash,name:String(hs.name||'Música da biblioteca').slice(0,120)};
+  if(PLACAR.menuDif!==G.diffs[0]){PLACAR.menuDif=G.diffs[0];PLACAR.dif=G.diffs[0];}
+  const dif=DIFFS[PLACAR.dif]?PLACAR.dif:'medium',song=placarSong(def);
+  $('plNick').textContent=myName();
+  $('plSong').textContent=!def?'Esperando a música':def===CUSTOM?(G.custom?G.custom.name:'Sua música'):def.name;
+  const dd=$('plDiffs');dd.innerHTML='';dd.hidden=!song;
+  for(const[k,d]of Object.entries(DIFFS)){const b=document.createElement('button');b.textContent=d.label;b.setAttribute('aria-pressed',k===dif);b.onclick=()=>{PLACAR.dif=k;placarRender();};dd.appendChild(b);}
+  const list=$('plList'),msg=$('plMsg'),say=t=>{msg.textContent=t;msg.hidden=!t;};
+  list.innerHTML='';
+  if(!def){say('Quando a música da sala for escolhida, o placar dela aparece aqui.');return;}
+  if(!song){say('Músicas de MP3 do seu computador não entram no placar global, porque cada pessoa tem um arquivo diferente.');return;}
+  if(!PLACAR.url){say(PLACAR.ready?'O placar global ainda não foi ligado.':'Carregando o placar…');return;}
+  const e=placarTop(song,dif),me=placarUid(),L=e.list||[];
+  if(e.err&&!e.list){say('Não deu para carregar o placar agora.');const b=document.createElement('button');b.className='swap';b.textContent='Tentar de novo';b.onclick=()=>{placarTop(song,dif,true);placarRender();};msg.appendChild(document.createElement('br'));msg.appendChild(b);return;}
+  if(!e.list){say('Carregando o placar…');return;}
+  const row=(r,i)=>`<li class="${r.id===me?'me':''}${i<3?' p'+(i+1):''}"><span class="pos">${i+1}º</span><span class="who"><b>${escH(r.nick)}</b><small>${'★'.repeat(r.estrelas)}${'☆'.repeat(5-r.estrelas)} · ${r.acerto}% · ${r.modo==='strum'?'palhetada':'toque'}</small></span><span class="sc">${r.pontos.toLocaleString('pt-BR')}</span></li>`;
+  const mi=L.findIndex(r=>r.id===me);
+  list.innerHTML=L.slice(0,10).map(row).join('')+(mi>=10?'<li class="gap" aria-hidden="true">…</li>'+row(L[mi],mi):'');
+  say(L.length?'':`Ninguém jogou essa música no ${DIFFS[dif].label} ainda. Seja o primeiro!`);
+  // trocou de nick: atualiza o nome na pontuação que já estava no placar
+  const mine=L[mi],fk=song+'/'+dif;
+  if(mine&&mine.nick!==myName()&&!PLACAR.fixed.has(fk)){PLACAR.fixed.add(fk);placarPut(`placar/${song}/${dif}/${me}`,{nick:myName(),pontos:mine.pontos,estrelas:Math.max(1,mine.estrelas),acerto:mine.acerto,seq:Math.max(0,mine.seq),modo:mine.modo,t:{'.sv':'timestamp'}}).then(()=>placarTop(song,dif,true)).catch(()=>{});}
+}
+function nickOpen(first){
+  $('nickIn').value=first?'':String(store.get('rr:name','')||'');$('nickErr').hidden=true;$('nickCancel').hidden=!!first;
+  $('nickPanel').hidden=false;$('menu').inert=true;setTimeout(()=>$('nickIn').focus(),0);
+}
+function nickClose(){$('nickPanel').hidden=true;$('menu').inert=false;}
+function nickSave(){
+  const v=cleanNick($('nickIn').value);
+  if(!v){$('nickErr').textContent='Escreva um nick para continuar.';$('nickErr').hidden=false;$('nickIn').focus();return;}
+  store.set('rr:name',v);PLACAR.fixed.clear();nickClose();if($('netName'))$('netName').value=v;placarRender();
+  const after=PLACAR.afterNick;PLACAR.afterNick=null;if(after)after();
+}
+$('nickOk').onclick=nickSave;$('nickCancel').onclick=nickClose;$('nickEdit').onclick=()=>nickOpen(false);
+$('nickIn').addEventListener('keydown',e=>{if(e.key==='Enter')nickSave();else if(e.key==='Escape'&&!$('nickCancel').hidden)nickClose();});
+fetch('placar/config.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).catch(()=>({})).then(c=>{
+  const u=String(window.RR_PLACAR_URL||(c&&c.firebase)||'').trim().replace(/\/+$/,'');
+  PLACAR.url=window.RR_PLACAR_URL||/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebaseio\.com|firebasedatabase\.app)$/i.test(u)?u:'';
+  PLACAR.qs=String(window.RR_PLACAR_QS||'');PLACAR.ready=true;placarRender();
+});
 
 // ---------- online: salas com até 8 jogadores ----------
 // O criador da sala é o centro: recebe tudo de cada amigo e repassa para os outros.
@@ -1933,7 +2065,7 @@ function buildNetBox(){
       <div class="row"><button class="btn primary" id="netCreateBtn">Criar sala</button></div>
       <div class="row"><input class="field" id="netCode" maxlength="5" autocomplete="off" autocapitalize="characters" placeholder="Código da sala" value="${escH(G.netCodeDraft||'')}" aria-label="Código da sala"><button class="btn" id="netJoinBtn">Entrar</button></div>
       <p>Um cria a sala e manda o código ou o link. Os outros entram com o código, até 8 pessoas. Cada um joga no próprio computador ou celular.</p>${status}`;
-    $('netName').oninput=e=>store.set('rr:name',e.target.value.slice(0,20));
+    $('netName').oninput=e=>{store.set('rr:name',e.target.value.slice(0,20));$('plNick').textContent=myName();PLACAR.fixed.clear();};
     $('netCode').oninput=e=>{G.netCodeDraft=e.target.value;};
     $('netCode').onkeydown=e=>{if(e.key==='Enter')netJoin($('netCode').value);};
     $('netCreateBtn').onclick=()=>netCreate(0);
@@ -2099,6 +2231,7 @@ function buildMenu(){
     else{const d=songDesc();if(d.kind==='file'||(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d))))pb.disabled=true;if(netGuestsPlaying(net)){pb.disabled=true;pb.textContent='Esperando todos terminarem';}netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netRoster(net);}}
   }
   if(G.songDef.yt||(G.online&&G.net&&G.net.hostSong&&G.net.hostSong.kind==='yt'))loadYTApi().catch(()=>{});
+  placarRender();
 }
 // aba em que a lista começa: a da música escolhida, ou a última aberta
 function menuTab(){
@@ -2542,8 +2675,9 @@ window.__rrAnalyze=analyze;window.__rrYT=YTP;window.__rrNet=()=>G.net;
 $('offset').oninput=e=>{G.offset=+e.target.value;$('offVal').textContent=G.offset+' ms';savePrefs();};
 $('playBtn').onclick=()=>{if(G.online){if(G.net&&G.net.connected&&G.net.host)netHostStart();return;}if(G.songDef.lib&&!curCustom()){const m=G.songDef.meta;libEnsure(m,true).then(()=>{if(G.state==='menu'&&G.songDef.lib&&G.songDef.meta.id===m.id)startGame();},()=>{});return;}startGame();};
 libRefresh();houseList();
-{const q=new URLSearchParams(location.search).get('sala');if(q){G.online=true;G.nPlayers=1;G.netCodeDraft=q;try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>netJoin(q),0);}}
+{const q=new URLSearchParams(location.search).get('sala');if(q){G.online=true;G.nPlayers=1;G.netCodeDraft=q;try{history.replaceState(null,'',location.pathname);}catch(e){}if(cleanNick(store.get('rr:name','')))setTimeout(()=>netJoin(q),0);else PLACAR.afterNick=()=>netJoin(q);}}
 buildMenu();
+if(!cleanNick(store.get('rr:name','')))nickOpen(true);
 requestAnimationFrame(frame);
 })();
 </script>

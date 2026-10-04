@@ -1,0 +1,26 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "placar": {
+      "$musica": {
+        "$dif": {
+          ".read": "$musica.matches(/^[0-9a-f]{16}$/) && ($dif === 'easy' || $dif === 'medium' || $dif === 'hard' || $dif === 'expert')",
+          ".indexOn": ["pontos"],
+          "$jogador": {
+            ".write": "$musica.matches(/^[0-9a-f]{16}$/) && ($dif === 'easy' || $dif === 'medium' || $dif === 'hard' || $dif === 'expert') && $jogador.matches(/^[0-9a-z]{16}$/) && newData.exists() && (!data.exists() || newData.child('pontos').val() >= data.child('pontos').val())",
+            ".validate": "newData.hasChildren(['nick', 'pontos', 'estrelas', 'acerto', 'seq', 'modo', 't'])",
+            "nick": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
+            "pontos": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20000000" },
+            "estrelas": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5" },
+            "acerto": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+            "seq": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+            "modo": { ".validate": "newData.val() === 'tap' || newData.val() === 'strum'" },
+            "t": { ".validate": "newData.val() === now" },
+            "$outro": { ".validate": false }
+          }
+        }
+      }
+    }
+  }
+}
