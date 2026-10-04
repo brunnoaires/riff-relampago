@@ -1,6 +1,36 @@
 {
   "musicas": [
     {
+      "caminho": "Eric Johnson - Cliffs Of Dover",
+      "nome": "Cliffs Of Dover",
+      "artista": "Eric Johnson",
+      "charter": "Neversoft",
+      "duracao": 255,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ],
+      "capa": "album.png"
+    },
+    {
+      "caminho": "Queens Of The Stone Age - 3's & 7's",
+      "nome": "3's & 7's",
+      "artista": "Queens of the Stone Age",
+      "charter": "Neversoft",
+      "duracao": 220,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ],
+      "capa": "album.png"
+    },
+    {
       "caminho": "Steve Ouimette - The Devil Went Down to Georgia",
       "nome": "The Devil Went Down to Georgia",
       "artista": "Steve Ouimette",
