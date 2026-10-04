@@ -836,10 +836,10 @@ if(typeof sel.offset==='number')G.offset=sel.offset;
 if(['same','parts','turns'].includes(sel.battle))G.battle=sel.battle;
 const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset,battle:G.battle});
 
-// ---------- batalha: cada um toca uma parte, ou revezamento de trechos ----------
+// ---------- batalha: cada um toca uma parte, ou duelo de trechos ----------
 const BATTLES={same:{label:'Mesmo chart',hint:'Todo mundo toca o mesmo chart e ganha quem fizer mais pontos.'},
   parts:{label:'Partes separadas',hint:''},
-  turns:{label:'Revezamento',hint:'A música é dividida em trechos e cada um toca os seus, um de cada vez. As notas dos outros passam apagadas na sua pista.'}};
+  turns:{label:'Duelo',hint:'A música é dividida em trechos e cada um toca os seus, um de cada vez. As notas dos outros passam apagadas na sua pista.'}};
 const PART_NAMES={guitar:'Guitarra',bass:'Baixo',rhythm:'Guitarra base'};
 // partes que a música tem (null = a música ainda está carregando)
 function songParts(def){
@@ -1611,7 +1611,7 @@ function drawHUD(now,t){
   for(const x of P.texts){const age=(now-x.t)/600;if(age>1)continue;c.globalAlpha=1-age;c.fillStyle=x.big?'#ffd23b':'#fff';c.font=`700 ${x.big?30:Math.max(14,laneW*.3)}px "Chakra Petch",sans-serif`;c.fillText(x.s,CX,hitY-laneW*1.4-age*30-(x.big?40:0));}
   for(const x of P.msgs){const age=(now-x.t)/1400;if(age>1)continue;c.globalAlpha=Math.min(1,(1-age)*2.5);const s=1+(1-Math.min(1,age*6))*.4;c.save();c.translate(CX,H*(narrow||two?.42:.32));c.scale(s,s);c.fillStyle=x.c;c.shadowColor=x.c;c.shadowBlur=20;c.font=`400 ${Math.min(56,(x1-x0)*.09)}px "Metal Mania",Impact,sans-serif`;c.fillText(x.s,0,0,(x1-x0)*.92);c.restore();}
   c.globalAlpha=1;
-  // revezamento: avisa de quem é a vez e escurece a pista de quem está esperando
+  // duelo: avisa de quem é a vez e escurece a pista de quem está esperando
   if(G.bt&&G.bt.cuts&&!P.out){
     const k=turnIndex(t+1.2),o=k%G.bt.n,mine=o===P.slot;
     if(k!==P.btK){P.btK=k;if(mine&&G.state==='play'&&t>-1.5)msg('SUA VEZ!','#ffd23b');}
@@ -1655,7 +1655,7 @@ function frame(){
       drawHighway(t);
       const end=t+P.D.win+.1;let i=Math.max(0,P.cursor-30),j=i;
       while(j<P.notes.length&&P.notes[j].time<end)j++;
-      // revezamento: as notas dos outros passam apagadas
+      // duelo: as notas dos outros passam apagadas
       let gi=0,gj=0;
       if(P.ghost){gi=P.gcur;while(gi<P.ghost.length&&P.ghost[gi].endTime<t-.6)gi++;P.gcur=gi;gj=gi;while(gj<P.ghost.length&&P.ghost[gj].time<end)gj++;for(let k=gj-1;k>=gi;k--){const n=P.ghost[k];if(n.len>0)drawTail(n,t);}}
       for(let k=j-1;k>=i;k--){const n=P.notes[k];if(n.len>0&&!n.done)drawTail(n,t);}
@@ -1794,7 +1794,7 @@ function results(ok){
   }else{
     const[a,b]=G.players;
     const win=!ok?-1:(a.out!==b.out?(a.out?1:0):(a.score===b.score?-1:(a.score>b.score?0:1)));
-    $('resEyebrow').textContent=`${name} · ${G.bt?BATTLES[G.bt.mode].label.toLowerCase():'duelo'}`;
+    $('resEyebrow').textContent=`${name} · ${G.bt?BATTLES[G.bt.mode].label.toLowerCase():'mesmo chart'}`;
     $('resTitle').textContent=!ok?'A plateia vaiou os dois':win<0?'Empate!':`Jogador ${win+1} venceu!`;
     body.innerHTML=`<div class="versus">${G.players.map(p=>{const pct=p.notes.length?Math.round(p.hits/p.notes.length*100):0;return`<div class="${p.i===win?'win':''}"><div class="who">Jogador ${p.i+1} · ${p.part&&G.bt&&G.bt.parts?PART_NAMES[p.part]+' · ':''}${p.D.label}</div><div class="sc">${p.score.toLocaleString('pt-BR')}</div><div class="ln">${pct}% das notas<br>sequência de ${p.maxCombo}${p.out?'<br>foi vaiado':''}</div></div>`;}).join('')}</div>`;
   }
@@ -2341,7 +2341,7 @@ function buildMenu(){
       const bx=$('battles');bx.innerHTML='';
       for(const[k,v]of Object.entries(BATTLES)){const b=document.createElement('button');b.textContent=v.label;b.setAttribute('aria-pressed',k===cur);b.disabled=gst;b.onclick=()=>{G.battle=k;savePrefs();buildMenu();};bx.appendChild(b);}
       const who=G.online?'Cada um toca uma parte, na ordem da sala: ':'O jogador 1 fica com a guitarra e o jogador 2 com ',pn=x=>PART_NAMES[x].toLowerCase();
-      let h=cur!=='parts'?BATTLES[cur].hint:!def?'':ps===null?'Carregando a música para ver as partes que ela tem…':ps.length<2?'Essa música só tem a guitarra. Escolha uma das 3 músicas do jogo, um chart do Clone Hero com baixo ou guitarra base, ou use o Revezamento.'
+      let h=cur!=='parts'?BATTLES[cur].hint:!def?'':ps===null?'Carregando a música para ver as partes que ela tem…':ps.length<2?'Essa música só tem a guitarra. Escolha uma das 3 músicas do jogo, um chart do Clone Hero com baixo ou guitarra base, ou use o Duelo.'
         :(G.online?who+ps.map(pn).join(', ')+'.':who+pn(ps[1])+'.')+' Quando alguém erra, a parte dele some da música.';
       if(gst)h='Quem criou a sala escolhe. '+h;
       $('battleHint').textContent=h;
