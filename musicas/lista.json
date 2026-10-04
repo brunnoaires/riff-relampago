@@ -1,3 +1,18 @@
 {
-  "musicas": []
+  "musicas": [
+    {
+      "caminho": "The Sex Pistols - Anarchy In The UK",
+      "nome": "Anarchy In The UK",
+      "artista": "The Sex Pistols",
+      "charter": "Neversoft",
+      "duracao": 219,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
+    }
+  ]
 }
