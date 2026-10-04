@@ -1,6 +1,20 @@
 {
   "musicas": [
     {
+      "caminho": "Steve Ouimette - The Devil Went Down to Georgia",
+      "nome": "The Devil Went Down to Georgia",
+      "artista": "Steve Ouimette",
+      "charter": "Neversoft",
+      "duracao": 390,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
+    },
+    {
       "caminho": "The Sex Pistols - Anarchy In The UK",
       "nome": "Anarchy In The UK",
       "artista": "The Sex Pistols",
