@@ -1,11 +1,41 @@
 {
   "musicas": [
     {
+      "caminho": "Bloc Party - Helicopter",
+      "nome": "Helicopter",
+      "artista": "Bloc Party",
+      "charter": "Neversoft",
+      "duracao": 225,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ],
+      "capa": "album.png"
+    },
+    {
       "caminho": "Eric Johnson - Cliffs Of Dover",
       "nome": "Cliffs Of Dover",
       "artista": "Eric Johnson",
       "charter": "Neversoft",
       "duracao": 255,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ],
+      "capa": "album.png"
+    },
+    {
+      "caminho": "Metallica - One",
+      "nome": "One",
+      "artista": "Metallica",
+      "charter": "Neversoft",
+      "duracao": 448,
       "arquivos": [
         "guitar.mp3",
         "notes.mid",
