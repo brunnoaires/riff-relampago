@@ -13,6 +13,48 @@
         "song.ini",
         "song.mp3"
       ]
+    },
+    {
+      "caminho": "The Smashing Pumpkins - Cherub Rock",
+      "nome": "Cherub Rock",
+      "artista": "The Smashing Pumpkins",
+      "charter": "Neversoft",
+      "duracao": 302,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
+    },
+    {
+      "caminho": "The Strokes - Reptilia",
+      "nome": "Reptilia",
+      "artista": "The Strokes",
+      "charter": "Neversoft",
+      "duracao": 219,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
+    },
+    {
+      "caminho": "The Who - The Seeker",
+      "nome": "The Seeker",
+      "artista": "The Who (Steve Ouimette)",
+      "charter": "Neversoft",
+      "duracao": 212,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
     }
   ]
 }
