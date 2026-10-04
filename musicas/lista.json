@@ -15,6 +15,20 @@
       ]
     },
     {
+      "caminho": "The Rolling Stones - Paint It Black",
+      "nome": "Paint It Black",
+      "artista": "The Rolling Stones",
+      "charter": "Neversoft",
+      "duracao": 233,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
+    },
+    {
       "caminho": "The Sex Pistols - Anarchy In The UK",
       "nome": "Anarchy In The UK",
       "artista": "The Sex Pistols",
@@ -62,6 +76,20 @@
       "artista": "The Who (Steve Ouimette)",
       "charter": "Neversoft",
       "duracao": 212,
+      "arquivos": [
+        "guitar.mp3",
+        "notes.mid",
+        "rhythm.mp3",
+        "song.ini",
+        "song.mp3"
+      ]
+    },
+    {
+      "caminho": "Tom Morello - Guitar Battle vs. Tom Morello",
+      "nome": "Guitar Battle vs. Tom Morello",
+      "artista": "Tom Morello",
+      "charter": "Neversoft",
+      "duracao": 208,
       "arquivos": [
         "guitar.mp3",
         "notes.mid",
