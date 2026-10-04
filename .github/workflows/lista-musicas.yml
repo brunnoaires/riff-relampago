@@ -7,14 +7,15 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  pages: write
 jobs:
   lista:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - run: node ferramentas/lista-musicas.mjs
       - name: Salvar a lista
         run: |
@@ -24,3 +25,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Atualiza a lista de músicas"
           git push
+          # garante que o site publica a lista nova
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
