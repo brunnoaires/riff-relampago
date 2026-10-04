@@ -1745,7 +1745,7 @@ function netHostData(net,pl,d){
     case'diff':pl.diff=DIFFS[d.diff]?d.diff:null;netRoster(net);if(menuOpen())buildMenu();break;
     case'ping':netSendTo(pl.conn,{t:'pong',a:d.a,b:performance.now()});break;
     case'pong':{const now=performance.now(),rtt=now-num(d.a);if(rtt>=0&&rtt<5000){pl.rtt=pl.rtt==null?rtt:pl.rtt*.7+rtt*.3;}break;}
-    case'have':pl.have={key:String(d.key||'').slice(0,40),ok:!!d.ok,why:String(d.why||'').slice(0,10)};if(menuOpen())buildMenu();if(!$('results').hidden)renderOnlineResults();break;
+    case'have':pl.have={key:String(d.key||'').slice(0,400),ok:!!d.ok,why:String(d.why||'').slice(0,10)};if(menuOpen())buildMenu();if(!$('results').hidden)renderOnlineResults();break;
     case'st':if(pl.hello&&d.r===net.round)net.live[pl.id]=cleanSt(d);break;
     case'end':{if(!pl.hello||d.r!==net.round)break;const e=cleanEnd(d);net.ends[pl.id]=e;netSend(Object.assign({t:'end',id:pl.id,r:net.round},e),pl.id);if(!$('results').hidden)renderOnlineResults();if(menuOpen())buildMenu();break;}
   }
@@ -1916,6 +1916,7 @@ function buildNetBox(){
     body=`<p>Sua sala</p><div class="roomcode">${net.code}</div><div class="row"><input class="field" id="netLink" readonly value="${escH(link)}" aria-label="Link da sala"><button class="btn" id="netCopy">Copiar link</button></div>`;
     body+=net.connected?`<p>Na sala (${net.roster.length} de ${NET_MAX}):</p>${list}`:`<p>Mande o código ou o link e espere seus amigos entrarem. Cabem até ${NET_MAX} pessoas.</p>`;
     if(net.connected)body+=hs.kind==='file'?'<p>Músicas de arquivo sem chart não funcionam online. Escolha uma música da casa, do YouTube ou da sua biblioteca.</p>'
+      :lib&&!netAllHave(net,hs)&&String(hs.hash).startsWith('casa:')?'<p>Esperando todos carregarem a música. Ela vem do site, ninguém precisa importar nada.</p>'
       :lib&&!netAllHave(net,hs)?'<p>Todos precisam ter esse chart na biblioteca para começar. Quem não tiver pode importar o mesmo arquivo (.sng, .chart ou pasta do Clone Hero).</p>'
       :'<p>Escolha a música e aperte <b>Tocar</b>. A música começa ao mesmo tempo para todos.</p>';
   }else{
