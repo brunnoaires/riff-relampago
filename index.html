@@ -38,6 +38,7 @@ textarea.field{min-height:84px;resize:vertical;font:500 .78rem/1.4 ui-monospace,
 .song.locked{cursor:default}
 .yt-panel{text-align:left}
 .yt-panel h2{margin-top:16px}
+.actions.sync{align-items:center}.synclbl{font-size:.8rem;color:var(--muted);white-space:nowrap;padding:0 4px}
 #tapStart{position:fixed;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);padding:16px 34px;border:0;border-radius:999px;font:400 1.6rem var(--display);color:#1b0b02;background:linear-gradient(180deg,#ffd27a,#ff8a1f 60%,#d9480f);cursor:pointer}
 #cv{display:block;width:100%;height:100%;touch-action:none}
 .overlay{position:fixed;inset:0;z-index:3;display:flex;align-items:flex-start;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) 16px max(16px,env(safe-area-inset-bottom,0px));overflow-y:auto;background:radial-gradient(ellipse at 50% 30%,rgba(14,8,16,.35),rgba(14,8,16,.82))}
@@ -161,6 +162,12 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
     <p class="hint">Gravar mais devagar ajuda a acertar o tempo. No jogo a música toca na velocidade normal.</p>
     <p class="err" id="ytErr" hidden></p>
     <div class="stack"><button class="btn primary" id="ytRecBtn">Começar a gravar</button></div>
+    <hr class="sep">
+    <h2>Chart automático com seu MP3</h2>
+    <p class="hint">Tem o MP3 dessa música? Cole o link acima e escolha o arquivo. O jogo cria as notas pelo arquivo e você joga com o vídeo. No fim, o vídeo toca e você aperta um traste quando a música começar, para acertar a sincronia.</p>
+    <p class="note" id="ytAutoMsg" hidden></p>
+    <div class="stack"><button class="btn" id="ytAutoBtn">Escolher MP3 e criar chart</button></div>
+    <input type="file" id="ytFile" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" hidden>
     <hr class="sep">
     <h2><label for="codeIn">Recebeu um código de um amigo?</label></h2>
     <textarea class="field" id="codeIn" placeholder="RR1:..."></textarea>
@@ -388,7 +395,7 @@ function buildCustomChart(an,dk){
     const lane=Math.min(D.lanes-1,Math.floor(q(c.c)*D.lanes));
     const nx=taken[i+1],g=(nx?nx.t:an.dur)-c.t;let len=0,end=c.t;
     if(g>.9){const r0=an.rms[fr(c.t+.06)];let s=0,n=0;for(let f=fr(c.t+.2);f<=fr(c.t+g-.2);f++){s+=an.rms[f];n++;}if(n&&s/n>r0*.55){len=1;end=c.t+g-.25;}}
-    const base={time:c.t,len,endTime:end,star:-1};
+    const base={time:c.t,len,endTime:end,star:-1,s:c.s};
     notes.push(Object.assign({lane},base));
     if(D.chords&&c.s>=strong){let l2=lane+D.gap;if(l2>D.lanes-1)l2=lane-D.gap;if(l2>=0&&l2!==lane)notes.push(Object.assign({lane:l2},base));}
   });
@@ -481,6 +488,7 @@ function ytStateChange(st){
 }
 function ytFailed(code){
   if(!(G.song&&G.song.yt)&&G.state!=='record')return;
+  if(G.state==='record'&&G.rec&&G.rec.sync){saveRecording(false);return;}
   if(G.state==='record'&&G.rec&&G.rec.notes.length>=5){saveRecording(false);menuNote('O vídeo parou com erro, mas salvei as notas gravadas até ali.',true);return;}
   G.rec=null;toMenu();menuNote(ytErrText('yt'+code),true);
 }
@@ -497,11 +505,24 @@ function parseYT(u){u=(u||'').trim();const m=u.match(/(?:youtu\.be\/|[?&]v=|\/sh
 function ytDef(ch){return{id:'yt:'+ch.id,yt:true,name:ch.title,chart:ch};}
 const ytList=()=>store.get('rr:yt',[]);
 function buildYTChart(ch,dk){
-  const D=DIFFS[dk],gap=dk==='expert'?0:D.gapS*.8,src=ch.notes.slice().sort((a,b)=>a.time-b.time);
-  const groups=[];for(const n of src){const g=groups[groups.length-1];if(g&&Math.abs(n.time-g.time)<.005)g.ns.push(n);else groups.push({time:n.time,ns:[n]});}
+  const D=DIFFS[dk],gap=dk==='expert'?0:D.gapS*.8,sh=+ch.shift||0;
+  const src=ch.notes.map(n=>Object.assign({},n,{time:n.time+sh})).filter(n=>n.time>=0).sort((a,b)=>a.time-b.time);
+  let groups=[];for(const n of src){const g=groups[groups.length-1];if(g&&Math.abs(n.time-g.time)<.005)g.ns.push(n);else groups.push({time:n.time,ns:[n]});}
+  const auto=src.length&&src[0].w!=null;
+  if(auto&&dk!=='expert'){
+    // chart automático: fica com as batidas mais fortes, respeitando o espaço da dificuldade
+    const target=Math.max(8,Math.round(ytEnd(ch)*D.rate)),gs=Math.round(D.gapS*100),occ=new Map(),keep=[];
+    for(const g of groups)g.w=Math.max(...g.ns.map(n=>n.w||0));
+    for(const g of groups.slice().sort((a,b)=>b.w-a.w)){
+      if(keep.length>=target)break;
+      const k=Math.round(g.time*100);let ok=true;for(let j=k-gs+1;j<k+gs;j++)if(occ.has(j)){ok=false;break;}
+      if(ok){occ.set(k,1);keep.push(g);}
+    }
+    groups=keep.sort((a,b)=>a.time-b.time);
+  }
   const notes=[];let last=-9;
   for(const g of groups){
-    if(g.time-last<gap-1e-6)continue;last=g.time;
+    if(!auto&&g.time-last<gap-1e-6)continue;last=g.time;
     let lanes=[...new Set(g.ns.map(n=>Math.round(n.lane*(D.lanes-1)/4)))].sort((a,b)=>a-b);if(!D.chords)lanes=lanes.slice(0,1);
     const len=Math.max(...g.ns.map(n=>n.len||0));
     for(const lane of lanes)notes.push({lane,time:g.time,len:len>0?1:0,endTime:g.time+len,star:-1});
@@ -516,13 +537,13 @@ function buildYTChart(ch,dk){
   return{notes,phrases:addStars(notes,wins,'time')};
 }
 function ytEnd(ch){const n=ch.notes;return ch.dur>0?ch.dur:(n.length?Math.max(...n.map(x=>x.time+x.len)):0)+3;}
-function encodeChart(ch){return'RR1:'+btoa(unescape(encodeURIComponent(JSON.stringify({v:ch.videoId,t:ch.title,d:Math.round(ch.dur||0),n:ch.notes.map(n=>[Math.round(n.time*1000),n.lane,Math.round(n.len*1000)])}))));}
+function encodeChart(ch){const sh=+ch.shift||0;return'RR1:'+btoa(unescape(encodeURIComponent(JSON.stringify({v:ch.videoId,t:ch.title,d:Math.round(ch.dur||0),n:ch.notes.filter(n=>n.time+sh>=0).map(n=>{const a=[Math.round((n.time+sh)*1000),n.lane,Math.round(n.len*1000)];if(n.w!=null)a.push(Math.round(n.w*99));return a;})}))));}
 function decodeChart(s){
   s=(s||'').replace(/\s+/g,'');if(!s.startsWith('RR1:'))throw new Error('code');
   const o=JSON.parse(decodeURIComponent(escape(atob(s.slice(4)))));
   if(!/^[\w-]{11}$/.test(o.v)||!Array.isArray(o.n)||!o.n.length)throw new Error('code');
   return{id:Date.now().toString(36),videoId:o.v,title:Array.from(String(o.t||'Música do YouTube')).slice(0,120).join(''),dur:Math.max(0,+o.d||0),
-    notes:o.n.filter(a=>Array.isArray(a)&&a.length>=2&&isFinite(a[0])).map(a=>({time:Math.max(0,a[0]/1000),lane:Math.max(0,Math.min(4,a[1]|0)),len:Math.max(0,(+a[2]||0)/1000)}))};
+    notes:o.n.filter(a=>Array.isArray(a)&&a.length>=2&&isFinite(a[0])).map(a=>{const n={time:Math.max(0,a[0]/1000),lane:Math.max(0,Math.min(4,a[1]|0)),len:Math.max(0,(+a[2]||0)/1000)};if(a.length>3&&isFinite(a[3]))n.w=Math.max(0,Math.min(1,a[3]/99));return n;})};
 }
 
 // ---------- estado ----------
@@ -596,12 +617,12 @@ async function startYT(startAt,NP){
   if(startAt){const late=(performance.now()-startAt)/1000;if(late>0){G.ytSeek=late;G.ytStartAt=performance.now();}else G.ytStartAt=startAt;}
   else G.ytStartAt=performance.now()+2400;
 }
-async function startRecording(videoId,rate){
+async function startRecording(videoId,rate,sync){
   initAudio();if(AC.state==='suspended')AC.resume();
   stopSource();
   G.song={yt:true,spb:.5,beat0:0,events:[],endTime:600};
   P=makePlayer(0,'expert','tap');P.D=Object.assign({},DIFFS.expert,{win:1.4});G.players=[P];
-  G.rec={videoId,rate,notes:[],down:[null,null,null,null,null]};
+  G.rec={videoId,rate,notes:[],down:[null,null,null,null,null],sync:sync||null};
   Object.assign(G,{state:'record',paused:false,ytGo:false,ytStartAt:performance.now()+1e9});
   layoutPlayers();show(null);$('yt').hidden=false;pauseBtn.hidden=false;$('tapStart').hidden=true;
   const token=G.ytToken=Math.random();
@@ -610,10 +631,22 @@ async function startRecording(videoId,rate){
   YTP.player.setVolume(100);YTP.player.setPlaybackRate(rate);
   G.ytStartAt=performance.now()+2400;
 }
-function recDown(l){P=G.players[0];const t=songT();if(!G.ytGo||t<0||G.rec.down[l]!=null)return;G.rec.down[l]=t;P.held[l]=1;P.flash[l]=performance.now();burst(l,LANE_COLORS[l],8);}
+function recDown(l){P=G.players[0];const t=songT();if(!G.ytGo||t<0||G.rec.down[l]!=null)return;
+  if(G.rec.sync){if(!YTP.playing)return;P.flash[l]=performance.now();G.rec.sync.off=t-SYNC_REACT-G.rec.sync.start;saveRecording(false);return;}
+ G.rec.down[l]=t;P.held[l]=1;P.flash[l]=performance.now();burst(l,LANE_COLORS[l],8);}
 function recUp(l){P=G.players[0];P.held[l]=0;const s=G.rec&&G.rec.down[l];if(s==null)return;G.rec.down[l]=null;const d=songT()-s;G.rec.notes.push({time:s,lane:l,len:d>.35?d:0});}
+const SYNC_REACT=.2; // tempo médio de reação ao marcar o começo
+function saveSync(r,fromEnd){
+  const p=YTP.player,sy=r.sync,off=sy.off||0,vd=p&&p.getVideoData?p.getVideoData():{},vdur=(p&&p.getDuration&&p.getDuration())||0;
+  const notes=sy.notes.map(n=>({time:+(n.time+off).toFixed(3),lane:n.lane,len:n.len,w:n.w})).filter(n=>n.time>=0);
+  const chart={id:Date.now().toString(36),videoId:r.videoId,title:(vd&&vd.title)||sy.name||'Música do YouTube',dur:vdur||sy.dur+Math.max(0,off),shift:0,notes};
+  const list=ytList();list.unshift(chart);store.set('rr:yt',list);
+  G.songDef=ytDef(chart);savePrefs();
+  toMenu();menuNote(`Chart criado com ${notes.length} notas${sy.off==null?', sem marcar o começo':''}. Se as notas vierem adiantadas ou atrasadas, ajuste a sincronia logo abaixo da música.`);
+}
 function saveRecording(fromEnd){
   const r=G.rec;if(!r)return;G.rec=null;
+  if(r.sync){saveSync(r,fromEnd);return;}
   r.down.forEach((s,l)=>{if(s!=null)r.notes.push({time:s,lane:l,len:0});});
   const notes=r.notes.slice().sort((a,b)=>a.time-b.time||a.lane-b.lane);
   let gt=-9;for(const n of notes){if(n.time-gt<.04)n.time=gt;else gt=n.time;}
@@ -924,8 +957,17 @@ function drawRecord(now,dt){
   drawBG(now/1000,(now/500)%1,.5,false);
   drawHighway(t);
   const win=P.D.win;
-  for(let i=G.rec.notes.length-1;i>=0;i--){const n=G.rec.notes[i];if(t-n.time>win)break;drawGem({lane:n.lane,time:2*t-n.time,star:-1},t);}
+  if(!G.rec.sync)for(let i=G.rec.notes.length-1;i>=0;i--){const n=G.rec.notes[i];if(t-n.time>win)break;drawGem({lane:n.lane,time:2*t-n.time,star:-1},t);}
   drawFrets(now);drawFx(dt);
+  if(G.rec.sync){
+    c.textAlign='left';c.font='700 15px "Chakra Petch",sans-serif';c.fillStyle='#ffd23f';
+    const tt=Math.max(0,t);c.fillText(`MARQUE O COMEÇO  ${Math.floor(tt/60)}:${String(Math.floor(tt%60)).padStart(2,'0')}`,26,36,Math.max(80,W-26-70));
+    c.font='600 12px "Chakra Petch",sans-serif';c.fillStyle='rgba(247,236,223,.8)';
+    const tch=P.touch||(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
+    c.fillText(tch?'Toque na tela quando a música começar no vídeo':'Aperte A S D F ou G quando a música começar no vídeo · Esc pausa',26,56,Math.max(80,W-26-70));
+    if(t<0){c.textAlign='center';c.fillStyle='rgba(255,255,255,.85)';c.font=`400 ${Math.min(64,W*.11)}px "Metal Mania",Impact,sans-serif`;c.fillText(G.ytStartAt-now>60000?'CARREGANDO':'PREPARE-SE',P.CX,H*.4);}
+    return;
+  }
   c.textAlign='left';c.font='700 15px "Chakra Petch",sans-serif';
   c.fillStyle=Math.floor(now/500)%2?'#ff4d4d':'#7a2020';ell(26,30,7,7);
   c.fillStyle='#f7ecdf';const tt=Math.max(0,t);c.fillText(`GRAVANDO  ${Math.floor(tt/60)}:${String(Math.floor(tt%60)).padStart(2,'0')}  ·  ${G.rec.notes.length} notas`,42,36,Math.max(80,W-42-70));
@@ -942,7 +984,7 @@ function recKey(e,down){
   if(G.paused)return;
   const km=KEYS1[e.code];
   if(km){e.preventDefault();if(e.repeat)return;down?recDown(km[1]):recUp(km[1]);return;}
-  if(down&&e.code==='Backspace'){e.preventDefault();G.rec.notes.pop();}
+  if(down&&e.code==='Backspace'&&!G.rec.sync){e.preventDefault();G.rec.notes.pop();}
 }
 addEventListener('keydown',e=>{
   if(G.state==='record'){recKey(e,true);return;}
@@ -985,9 +1027,11 @@ function togglePause(){
   if(G.paused){
     G.pauseAt=performance.now();AC.suspend();if(yt&&G.ytGo)YTP.player.pauseVideo();
     if(rec){G.rec.down.forEach((s,l)=>{if(s!=null)recUp(l);});}
-    $('resumeBtn').textContent=rec?'Continuar gravando':'Continuar';
-    $('restartBtn').textContent=rec?'Recomeçar gravação':'Recomeçar música';
-    $('quitBtn').textContent=rec?'Descartar gravação':'Voltar ao menu';
+    const sy=rec&&G.rec.sync;
+    $('resumeBtn').textContent=sy?'Continuar':rec?'Continuar gravando':'Continuar';
+    $('restartBtn').textContent=sy?'Ver o começo de novo':rec?'Recomeçar gravação':'Recomeçar música';
+    $('quitBtn').textContent=sy?'Descartar chart':rec?'Descartar gravação':'Voltar ao menu';
+    $('saveRecBtn').textContent=sy?'Salvar sem marcar':'Salvar chart';
     $('saveRecBtn').hidden=!rec;
     show('pause');$('resumeBtn').focus();
   }else{
@@ -999,7 +1043,7 @@ function togglePause(){
 pauseBtn.onclick=togglePause;
 spBtns.forEach((b,i)=>b.addEventListener('pointerdown',e=>{e.preventDefault();P=G.players[i];if(P)activateSP();}));
 $('resumeBtn').onclick=togglePause;
-$('restartBtn').onclick=()=>{AC.resume();if(G.state==='record'){const r=G.rec;startRecording(r.videoId,r.rate);return;}endAudio(.05);startGame();};
+$('restartBtn').onclick=()=>{AC.resume();if(G.state==='record'){const r=G.rec;if(r.sync)r.sync.off=null;startRecording(r.videoId,r.rate,r.sync);return;}endAudio(.05);startGame();};
 $('saveRecBtn').onclick=()=>{AC.resume();saveRecording(false);};
 const toMenu=()=>{stopSource();G.ytToken=0;if(YTP.player&&YTP.player.pauseVideo){try{YTP.player.pauseVideo();}catch(e){}}$('yt').hidden=true;$('tapStart').hidden=true;G.rec=null;G.state='menu';G.song=null;G.players=[];buildMenu();show('menu');};
 $('quitBtn').onclick=()=>{AC.resume();if(G.online&&G.state==='play')netSendEnd(false,true);if(G.song&&!G.song.yt)endAudio(.05);toMenu();};
@@ -1135,7 +1179,8 @@ function songDesc(){const d=G.songDef;if(d.yt)return{kind:'yt',chart:d.chart};if
 function normChart(c){
   if(!c||typeof c!=='object'||!/^[\w-]{11}$/.test(c.videoId)||!Array.isArray(c.notes)||!c.notes.length)throw new Error('chart');
   return{id:String(c.id||'x').replace(/[^\w]/g,'').slice(0,20)||'x',videoId:c.videoId,title:String(c.title||'Música do YouTube').slice(0,120),dur:Math.max(0,num(c.dur)),
-    notes:c.notes.slice(0,20000).filter(n=>n&&Number.isFinite(+n.time)).map(n=>({time:Math.max(0,+n.time),lane:Math.max(0,Math.min(4,n.lane|0)),len:Math.max(0,num(n.len))}))};
+    shift:Math.max(-30,Math.min(30,num(c.shift))),
+    notes:c.notes.slice(0,20000).filter(n=>n&&Number.isFinite(+n.time)).map(n=>{const o={time:Math.max(0,+n.time),lane:Math.max(0,Math.min(4,n.lane|0)),len:Math.max(0,num(n.len))};if(n.w!=null&&Number.isFinite(+n.w))o.w=Math.max(0,Math.min(1,+n.w));return o;})};
 }
 function descToDef(s){
   if(!s||typeof s!=='object')return null;
@@ -1286,11 +1331,15 @@ function buildMenu(){
       const del=document.createElement('button');del.className='swap';del.textContent=ch._confirm?'Confirmar: apagar':'Apagar';
       del.onclick=()=>{if(!ch._confirm){ch._confirm=1;del.textContent='Confirmar: apagar';return;}store.set('rr:yt',ytList().filter(c=>c.id!==ch.id));G.songDef=SONGS[0];savePrefs();buildMenu();};
       a.append(cp,del);songs.appendChild(a);
+      const sh=+ch.shift||0,sr=document.createElement('div');sr.className='actions sync';
+      const lbl=document.createElement('span');lbl.className='synclbl';lbl.textContent='Sincronia '+(sh>0?'+':sh<0?'−':'')+Math.abs(sh).toFixed(2).replace('.',',')+' s';
+      const mk=(t,d,tip)=>{const b=document.createElement('button');b.className='swap';b.textContent=t;b.title=tip;b.onclick=()=>{const list=ytList(),c=list.find(x=>x.id===ch.id);if(!c)return;c.shift=Math.round(((+c.shift||0)+d)*100)/100;store.set('rr:yt',list);G.songDef=ytDef(c);buildMenu();};return b;};
+      sr.append(mk('Notas mais cedo',-.05,'Use se as notas chegam depois do som'),lbl,mk('Notas mais tarde',.05,'Use se as notas chegam antes do som'));songs.appendChild(sr);
     }
   }
   const yb=document.createElement('button');yb.className='song upload';
-  yb.innerHTML=`<span class="nm">Música do YouTube</span><span class="meta">Cole um link, toque junto e grave o chart. Também dá para importar o código de um amigo.</span><span class="tier"><b>+</b>gravar</span>`;
-  yb.onclick=()=>{loadYTApi().catch(()=>{});ytErr('');show('ytPanel');buildRates();$('ytUrl').focus();};
+  yb.innerHTML=`<span class="nm">Música do YouTube</span><span class="meta">Cole um link e grave o chart tocando junto, ou crie automático com o MP3 da música. Também dá para importar o código de um amigo.</span><span class="tier"><b>+</b>gravar</span>`;
+  yb.onclick=()=>{loadYTApi().catch(()=>{});ytErr('');if(!ytAuto)ytAutoMsg('');show('ytPanel');buildRates();$('ytUrl').focus();};
   songs.appendChild(yb);
   }
 
@@ -1332,6 +1381,38 @@ $('ytRecBtn').onclick=()=>{if(loading&&!loading.err){ytErr('Espere terminar a an
 $('ytUrl').addEventListener('keydown',e=>{if(e.key==='Enter')$('ytRecBtn').click();});
 $('importBtn').onclick=()=>{try{const ch=decodeChart($('codeIn').value);const list=ytList();list.unshift(ch);store.set('rr:yt',list);G.songDef=ytDef(ch);savePrefs();$('codeIn').value='';buildMenu();show('menu');menuNote(`Importei "${ch.title}" com ${ch.notes.length} notas.`);}catch(e){ytErr('Esse código não está completo ou não é do Riff Relâmpago.');}};
 $('ytBack').onclick=()=>{buildMenu();show('menu');};
+let ytAuto=null;
+function ytAutoMsg(t){const m=$('ytAutoMsg');m.textContent=t;m.hidden=!t;}
+function autoNotes(an){
+  const c=buildCustomChart(an,'expert'),ss=[...new Set(c.notes.map(n=>n.s))].sort((a,b)=>a-b),rk=new Map(ss.map((v,i)=>[v,ss.length>1?i/(ss.length-1):1]));
+  return c.notes.map(n=>({time:+n.time.toFixed(3),lane:n.lane,len:n.len>0?+(n.endTime-n.time).toFixed(3):0,w:+rk.get(n.s).toFixed(3)}));
+}
+function musicStart(an){const r=an.rms;let mx=0;for(const v of r)mx=Math.max(mx,v);for(let f=0;f<r.length;f++)if(r[f]>mx*.08)return(f*an.hop+an.F/2)/an.fs;return 0;}
+$('ytAutoBtn').onclick=()=>{
+  if(ytAuto)return;
+  if(loading&&!loading.err){ytErr('Espere terminar a análise da música carregada.');return;}
+  const id=parseYT($('ytUrl').value);if(!id){ytErr('Cole primeiro o link do vídeo do YouTube aqui em cima, depois escolha o MP3.');$('ytUrl').focus();return;}
+  ytErr('');$('ytFile').dataset.v=id;$('ytFile').click();
+};
+$('ytFile').onchange=async()=>{
+  const fi=$('ytFile'),f=fi.files&&fi.files[0],id=fi.dataset.v;fi.value='';if(!f||!id||ytAuto)return;
+  const name=f.name.replace(/\.[^.]+$/,''),job=ytAuto={};$('ytAutoBtn').disabled=true;$('ytRecBtn').disabled=true;
+  ytAutoMsg('Ouvindo o arquivo e criando as notas… 0%');
+  try{
+    initAudio();
+    const data=await f.arrayBuffer();
+    const buffer=await new Promise((res,rej)=>{const r=AC.decodeAudioData(data,res,rej);if(r&&r.then)r.then(res,rej);});
+    if(buffer.duration<10)throw new Error('short');
+    const an=await analyze(buffer,p=>{if(ytAuto===job)ytAutoMsg('Ouvindo o arquivo e criando as notas… '+Math.round(p*100)+'%');});
+    const sync={notes:autoNotes(an),dur:an.dur,start:musicStart(an),name,off:null};
+    if(ytAuto!==job)return;ytAuto=null;ytAutoMsg('');
+    if($('ytPanel').hidden||G.state!=='menu')return;
+    startRecording(id,1,sync);
+  }catch(e){
+    if(ytAuto!==job)return;ytAuto=null;ytAutoMsg('');
+    ytErr(e&&e.message==='short'?'Essa faixa é curta demais. Use uma música com pelo menos 10 segundos.':'Não consegui ler esse arquivo. Tente um MP3 ou WAV.');
+  }finally{if(ytAuto===null){$('ytAutoBtn').disabled=false;$('ytRecBtn').disabled=false;}}
+};
 fileIn.onchange=async()=>{
   const f=fileIn.files&&fileIn.files[0];fileIn.value='';if(!f)return;
   const name=f.name.replace(/\.[^.]+$/,'');
