@@ -181,6 +181,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
       <div class="col">
         <div><h2>Jogadores</h2><div id="players" class="seg"></div></div>
         <div id="netBox" hidden><h2>Sala online</h2><div id="netInner" class="net"></div></div>
+        <div id="battleBox" hidden><h2>Batalha</h2><div id="battles" class="seg"></div><p class="hint" id="battleHint"></p></div>
         <div><h2>Dificuldade</h2><div id="diffs"></div></div>
         <div id="modeBox"><h2>Modo</h2><div id="modes" class="seg"></div><p class="hint" id="modeHint"></p></div>
         <div><h2><label for="offset">Atraso do áudio</label><span id="offVal">0 ms</span></h2><input type="range" id="offset" min="-150" max="150" step="5" value="0"><p class="hint">Se as notas parecerem adiantadas em relação ao som, aumente.</p></div>
@@ -536,20 +537,25 @@ function tempoMap(res,tempos){
   return tick=>{let lo=0,hi=T.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(T[m].tick<=tick)lo=m;else hi=m-1;}const a=T[lo];return a.sec+(tick-a.tick)/res*a.spq;};
 }
 function finishChart(raw){
-  const sec=tempoMap(raw.res,raw.tempos),off=raw.offset||0,diffs={},sp={};
+  const sec=tempoMap(raw.res,raw.tempos),off=raw.offset||0;
+  const conv=(N,S)=>{const diffs={},sp={};
   for(const dk of Object.keys(CH_DIFFS)){
-    const ns=raw.notes[dk];if(!ns||!ns.length)continue;
+    const ns=N[dk];if(!ns||!ns.length)continue;
     const out=[];const seen=new Set();
     for(const n of ns){if(n.lane<0||n.lane>4)continue;const k=n.tick*8+n.lane;if(seen.has(k))continue;seen.add(k);const t=sec(n.tick)+off,e=sec(n.tick+n.len)+off,len=n.len>0&&e-t>=.15?e-t:0;out.push({time:+t.toFixed(3),lane:n.lane,len:+len.toFixed(3)});}
     out.sort((a,b)=>a.time-b.time||a.lane-b.lane);
     if(out.length)diffs[dk]=out;
-    const ph=(raw.sp[dk]||[]).map(q=>[+(sec(q.tick)+off).toFixed(3),+(sec(q.tick+Math.max(1,q.len))+off+.001).toFixed(3)]);
+    const ph=(S[dk]||[]).map(q=>[+(sec(q.tick)+off).toFixed(3),+(sec(q.tick+Math.max(1,q.len))+off+.001).toFixed(3)]);
     if(ph.length)sp[dk]=ph;
   }
+  return{diffs,sp};};
+  const{diffs,sp}=conv(raw.notes,raw.sp),parts={};
   if(!Object.keys(diffs).length)throw new Error('nonotes');
+  // outras partes do chart (baixo, guitarra base) para o modo batalha
+  for(const[k,v]of Object.entries(raw.parts||{})){const r=conv(v.notes,v.sp);if(Object.keys(r.diffs).length)parts[k]=r;}
   const beats=[];const all=Object.values(diffs).flat();const last=Math.max(...all.map(n=>n.time+n.len));
   for(let k=0;k<20000;k++){const t=sec(k*raw.res)+off;if(t>last+4)break;beats.push(+t.toFixed(4));}
-  return{name:raw.name||'',artist:raw.artist||'',diffs,sp,beats,last};
+  return{name:raw.name||'',artist:raw.artist||'',diffs,sp,beats,last,parts};
 }
 function parseChartText(txt){
   const sec={};txt.replace(/\[([^\]\r\n]+)\]\s*\{([\s\S]*?)\}/g,(m,n,b)=>{sec[n.trim()]=b;return'';});
@@ -557,13 +563,16 @@ function parseChartText(txt){
   const kv={};(sec.Song||'').split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\w+)\s*=\s*(.*?)\s*$/);if(m)kv[m[1]]=m[2].replace(/^"|"$/g,'');});
   const res=+kv.Resolution||192,tempos=[];
   (sec.SyncTrack||'').split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\s*=\s*B\s+(\d+)/);if(m&&+m[2]>0)tempos.push({tick:+m[1],spq:60000/+m[2]});});
-  const notes={},sp={};
-  for(const[dk,nm]of Object.entries(CH_DIFFS)){
-    const b=sec[nm+'Single'];if(!b)continue;notes[dk]=[];sp[dk]=[];
-    b.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\s*=\s*([NS])\s+(\d+)\s+(\d+)/);if(!m)return;const tick=+m[1],a=+m[3],len=+m[4];
-      if(m[2]==='N'&&a<=4)notes[dk].push({tick,lane:a,len});else if(m[2]==='S'&&a===2)sp[dk].push({tick,len});});
-  }
-  return finishChart({res,tempos,notes,sp,offset:0,name:kv.Name,artist:kv.Artist}); // o Clone Hero ignora o Offset do .chart (usa o delay do song.ini)
+  const inst=sfx=>{const notes={},sp={};let any=false;
+    for(const[dk,nm]of Object.entries(CH_DIFFS)){
+      const b=sec[nm+sfx];if(!b)continue;notes[dk]=[];sp[dk]=[];any=true;
+      b.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\s*=\s*([NS])\s+(\d+)\s+(\d+)/);if(!m)return;const tick=+m[1],a=+m[3],len=+m[4];
+        if(m[2]==='N'&&a<=4)notes[dk].push({tick,lane:a,len});else if(m[2]==='S'&&a===2)sp[dk].push({tick,len});});
+    }
+    return any?{notes,sp}:null;};
+  const main=inst('Single')||{notes:{},sp:{}},parts={},bass=inst('DoubleBass'),rhy=inst('DoubleRhythm')||inst('DoubleGuitar');
+  if(bass)parts.bass=bass;if(rhy)parts.rhythm=rhy;
+  return finishChart({res,tempos,notes:main.notes,sp:main.sp,parts,offset:0,name:kv.Name,artist:kv.Artist}); // o Clone Hero ignora o Offset do .chart (usa o delay do song.ini)
 }
 function parseMidi(ab){
   const d=new DataView(ab),L=d.byteLength;let p=0;
@@ -590,18 +599,21 @@ function parseMidi(ab){
   const pick=n=>tracks.find(t=>t.name.toUpperCase()===n);
   const gt=pick('PART GUITAR')||pick('T1 GEMS')||pick('PART LEAD')||pick('PART BASS')||tracks.find(t=>t.ev.some(e=>e.on>=96&&e.on<=100));
   if(!gt)throw new Error('nonotes');
-  const base={easy:60,medium:72,hard:84,expert:96},notes={},sp={},open={};
-  for(const dk in base){notes[dk]=[];sp[dk]=[];}
-  const spOpen={};
-  for(const e of gt.ev){
-    const k=e.on!=null?e.on:e.off;
-    if(e.on!=null){open[k]=e.tick;continue;}
-    const s=open[k];if(s==null)continue;delete open[k];
-    for(const dk in base){const l=k-base[dk];if(l>=0&&l<=4){const len=e.tick-s;notes[dk].push({tick:s,lane:l,len:len>div/3?len:0});}}
-    if(k===116)for(const dk in base)sp[dk].push({tick:s,len:e.tick-s});
-  }
-  for(const dk in base)notes[dk].sort((a,b)=>a.tick-b.tick);
-  return finishChart({res:div,tempos,notes,sp,offset:0,name:'',artist:''});
+  const base={easy:60,medium:72,hard:84,expert:96};
+  const read=tr=>{const notes={},sp={},open={};
+    for(const dk in base){notes[dk]=[];sp[dk]=[];}
+    for(const e of tr.ev){
+      const k=e.on!=null?e.on:e.off;
+      if(e.on!=null){open[k]=e.tick;continue;}
+      const s=open[k];if(s==null)continue;delete open[k];
+      for(const dk in base){const l=k-base[dk];if(l>=0&&l<=4){const len=e.tick-s;notes[dk].push({tick:s,lane:l,len:len>div/3?len:0});}}
+      if(k===116)for(const dk in base)sp[dk].push({tick:s,len:e.tick-s});
+    }
+    for(const dk in base)notes[dk].sort((a,b)=>a.tick-b.tick);
+    return{notes,sp};};
+  const main=read(gt),parts={},bt=pick('PART BASS'),rt=pick('PART RHYTHM')||pick('PART GUITAR COOP');
+  if(bt&&bt!==gt)parts.bass=read(bt);if(rt&&rt!==gt)parts.rhythm=read(rt);
+  return finishChart({res:div,tempos,notes:main.notes,sp:main.sp,parts,offset:0,name:'',artist:''});
 }
 function parseIni(txt){const o={};txt.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\w+)\s*=\s*(.*?)\s*$/);if(m)o[m[1].toLowerCase()]=m[2];});return o;}
 function pickDiff(diffs,dk){const order=['easy','medium','hard','expert'],i=order.indexOf(dk);for(let d=0;d<4;d++){for(const j of[i-d,i+d]){const k=order[j];if(k&&diffs[k])return k;}}return Object.keys(diffs)[0];}
@@ -704,7 +716,12 @@ function sfxStar(){const t=AC.currentTime;const g=env(t,.4,.9,buses.fx,.05);cons
 function setMute(on){
   if(!AC)return;P.muted=on;
   buses.pm[P.i].g.gain.setTargetAtTime(on?.04:1,AC.currentTime,on?.015:.008);
-  if(G.song&&G.song.custom){const any=G.players.some(p=>p.muted&&!p.out);buses.muffle.frequency.setTargetAtTime(any?900:20000,AC.currentTime,any?.02:.01);}
+  if(P.part==='bass'&&G.song&&!G.song.custom&&!G.song.yt)buses.bass.gain.setTargetAtTime(on?.05:.42,AC.currentTime,on?.015:.008);
+  if(G.song&&G.song.custom){
+    const f=G.partF&&G.partF[P.part];if(f)f.frequency.setTargetAtTime(on?900:20000,AC.currentTime,on?.02:.01);
+    // só quem toca a guitarra (ou o chart inteiro) abafa a música toda
+    const any=G.players.some(p=>p.muted&&!p.out&&(!p.part||p.part==='guitar'));buses.muffle.frequency.setTargetAtTime(any?900:20000,AC.currentTime,any?.02:.01);
+  }
   if(G.song&&G.song.yt&&YTP.player&&YTP.player.setVolume){const any=G.players.some(p=>p.muted&&!p.out);YTP.player.setVolume(any?30:100);}
 }
 
@@ -805,7 +822,7 @@ function decodeChart(s){
 }
 
 // ---------- estado ----------
-const G={online:false,net:null,netMsg:null,state:'menu',paused:false,song:null,songDef:SONGS[0],players:[],nPlayers:1,diffs:['medium','medium'],mode:'tap',offset:0,custom:null,lib:null,netLast:null,src:null};
+const G={battle:'same',netBattle:'same',bt:null,partF:{},online:false,net:null,netMsg:null,state:'menu',paused:false,song:null,songDef:SONGS[0],players:[],nPlayers:1,diffs:['medium','medium'],mode:'tap',offset:0,custom:null,lib:null,netLast:null,src:null};
 let P=null; // jogador da vez
 window.__rr=G;G.songT=()=>songT();
 const sel=store.get('rr:prefs',{});
@@ -816,8 +833,83 @@ if(MODES[sel.mode])G.mode=sel.mode;
 if(sel.n===2)G.nPlayers=2;
 if(sel.n==='online')G.online=true;
 if(typeof sel.offset==='number')G.offset=sel.offset;
-const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset});
+if(['same','parts','turns'].includes(sel.battle))G.battle=sel.battle;
+const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset,battle:G.battle});
 
+// ---------- batalha: cada um toca uma parte, ou revezamento de trechos ----------
+const BATTLES={same:{label:'Mesmo chart',hint:'Todo mundo toca o mesmo chart e ganha quem fizer mais pontos.'},
+  parts:{label:'Partes separadas',hint:''},
+  turns:{label:'Revezamento',hint:'A música é dividida em trechos e cada um toca os seus, um de cada vez. As notas dos outros passam apagadas na sua pista.'}};
+const PART_NAMES={guitar:'Guitarra',bass:'Baixo',rhythm:'Guitarra base'};
+// partes que a música tem (null = a música ainda está carregando)
+function songParts(def){
+  if(!def||def.yt||def===CUSTOM)return['guitar'];
+  if(def.lib){const cur=G.lib&&G.lib.id===def.meta.id?G.lib:null;if(!cur)return null;const pt=cur.chart.parts||{};return['guitar',...['bass','rhythm'].filter(k=>pt[k])];}
+  return['guitar','bass'];
+}
+function battleMode(){const b=G.online?G.netBattle:G.nPlayers>1?G.battle:'same';return BATTLES[b]?b:'same';}
+// quem toca o quê: no mesmo PC são os jogadores 1 e 2; online é a ordem da sala
+function battleSlots(NP){
+  const L=G.online&&G.net&&G.net.inSong;
+  if(L&&L.length)return{n:L.length,mine:[Math.max(0,L.findIndex(p=>p.id===G.net.myId))],names:L.map(p=>p.name)};
+  return{n:NP,mine:[0,1].slice(0,NP),names:['Jogador 1','Jogador 2']};
+}
+// a parte escolhida não existe nessa música: o botão Tocar fica desligado
+function battleBlocked(def){const b=G.online?G.battle:G.nPlayers>1?G.battle:'same';if(b!=='parts')return false;const ps=songParts(def);return!ps||ps.length<2;}
+// cortes entre trechos de ~8 s, sempre no maior silêncio entre notas (o mesmo para todo mundo)
+function turnCuts(ref){
+  const ns=ref.map(x=>({t:x.time,e:Math.max(x.time,x.endTime||x.time)})).sort((a,b)=>a.t-b.t),gaps=[];
+  let end=-1e9;for(let k=0;k<ns.length-1;k++){end=Math.max(end,ns[k].e);const g=ns[k+1].t-end;if(g>.05)gaps.push({at:end+g/2,g});}
+  const cuts=[];let from=ns.length?ns[0].t:0,i=0;
+  while(i<gaps.length){
+    while(i<gaps.length&&gaps[i].at<from+6)i++;
+    if(i>=gaps.length)break;
+    let best=i;for(let j=i;j<gaps.length&&gaps[j].at<=from+11;j++)if(gaps[j].g>gaps[best].g+.05)best=j;
+    cuts.push(gaps[best].at);from=gaps[best].at;i=best+1;
+  }
+  const last=ns.length?ns[ns.length-1].t:0;
+  if(cuts.length&&last-cuts[cuts.length-1]<3)cuts.pop(); // não deixa um trechinho no fim
+  return cuts;
+}
+function turnIndex(time){const cs=G.bt.cuts;let lo=0,hi=cs.length;while(lo<hi){const m=(lo+hi)>>1;if(cs[m]<=time)lo=m+1;else hi=m;}return lo;}
+const turnOwner=time=>turnIndex(time)%G.bt.n;
+// separa as notas do jogador: as dele contam, as dos outros só aparecem apagadas
+function battleSplit(p){
+  const mine=[],ghost=[],map=new Map(),ph=[];
+  for(const x of p.notes){
+    if(turnOwner(x.time)===p.slot){if(x.star>=0){let id=map.get(x.star);if(id==null){id=ph.length;map.set(x.star,id);ph.push({total:0,hit:0,broken:false});}ph[id].total++;x.star=id;}mine.push(x);}
+    else{x.star=-1;x.ghost=true;ghost.push(x);}
+  }
+  p.notes=mine;p.phrases=ph;p.ghost=ghost;p.gcur=0;
+}
+// prepara a batalha antes de montar os jogadores; refFn devolve as notas do Expert (para os cortes)
+function battleSetup(NP,refFn){
+  const mode=battleMode();G.bt=null;G.partF={};
+  const bs=battleSlots(NP);
+  if(mode==='same'||bs.n<2)return;
+  G.bt={mode,n:bs.n,mine:bs.mine,names:bs.names,parts:mode==='parts'?songParts(G.songDef)||['guitar']:null,cuts:mode==='turns'?turnCuts(refFn()):null};
+}
+// chart de baixo das músicas da casa, feito da linha de baixo que o jogo toca
+function buildBassChart(song,dk){
+  const D=DIFFS[dk],eps=1e-6,grid={easy:2,medium:1,hard:.5,expert:.5}[dk],keep=[];let prev=null;
+  for(const e of song.events){
+    if(e.type!=='bass')continue;
+    const g=e.beat/grid;if(Math.abs(g-Math.round(g))>eps)continue;
+    if(dk==='hard'&&prev&&prev.m===e.m&&Math.abs(e.beat-Math.round(e.beat))>eps)continue;
+    prev=e;keep.push(e);
+  }
+  // nota mais grave na casa verde, mais aguda na última casa da dificuldade
+  const ps=[...new Set(keep.map(e=>e.m))].sort((a,b)=>a-b),lane=m=>ps.length<2?0:Math.round(ps.indexOf(m)/(ps.length-1)*(D.lanes-1));
+  const notes=keep.map(e=>{const len=e.d>=1?e.d-.25:0;return{lane:lane(e.m),beat:e.beat,time:e.beat*song.spb,len,endTime:(e.beat+len)*song.spb,star:-1};});
+  return{notes,phrases:addStars(notes,song.stars,'beat')};
+}
+// em qual saída de som toca a guitarra principal das músicas da casa
+function leadBuses(time){
+  const bt=G.bt,live=G.players.filter(p=>!p.out),free=[{g:buses.pm[1].g,v:1}];
+  if(bt&&bt.mode==='turns'){const p=G.players.find(q=>q.slot===turnOwner(time));return p?(p.out?[]:[{g:buses.pm[p.i].g,v:1}]):free;}
+  if(bt&&bt.mode==='parts'){const gs=live.filter(p=>p.part==='guitar');if(gs.length)return gs.map(p=>({g:buses.pm[p.i].g,v:gs.length>1?.7:1}));return G.players.some(p=>p.part==='guitar')?[]:free;}
+  return live.map(p=>({g:buses.pm[p.i].g,v:G.players.length>1?.7:1}));
+}
 function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0};}
 function songT(){
   if(G.song&&G.song.yt){if(!G.ytGo){const r=(G.ytStartAt-performance.now())/1000;return(r>60?-99:-r)-G.offset/1000;}return ytNow()-G.offset/1000;}
@@ -840,11 +932,21 @@ async function startGame(startAt){
   const cc=custom&&cur.chart;
   G.song=cc?{custom:true,spb:.5,bpm:120,beat0:0,beats:cc.beats,events:[],endTime:Math.max(cur.dur,cc.last+2)+.5}
     :custom?{custom:true,spb:cur.an.spb,bpm:cur.an.bpm,beat0:cur.an.beat0,events:[],endTime:cur.buffer.duration+.5}:generateSong(G.songDef);
+  battleSetup(NP,()=>cc?chartForPlay(cc.diffs,cc.sp,'expert',0).notes:custom?buildCustomChart(cur.an,'expert').notes:buildChart(G.song,'expert').notes);
   G.players=[];
   for(let i=0;i<NP;i++){
     const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');
-    const ch=cc?chartForPlay(cc.diffs,cc.sp,pl.diff,0):custom?buildCustomChart(cur.an,pl.diff):buildChart(G.song,pl.diff);
-    pl.notes=ch.notes;pl.phrases=ch.phrases;G.players.push(pl);
+    let ch=null;
+    if(G.bt){
+      pl.slot=G.bt.mine[i];
+      if(G.bt.parts){
+        pl.part=G.bt.parts[pl.slot%G.bt.parts.length];const pc=cc&&cc.parts&&cc.parts[pl.part];
+        if(pl.part!=='guitar')ch=pc?chartForPlay(pc.diffs,pc.sp,pl.diff,0):!custom&&pl.part==='bass'?buildBassChart(G.song,pl.diff):null;
+        if(!ch)pl.part='guitar';
+      }
+    }
+    if(!ch)ch=cc?chartForPlay(cc.diffs,cc.sp,pl.diff,0):custom?buildCustomChart(cur.an,pl.diff):buildChart(G.song,pl.diff);
+    pl.notes=ch.notes;pl.phrases=ch.phrases;if(G.bt&&G.bt.cuts)battleSplit(pl);G.players.push(pl);
   }
   Object.assign(G,{state:'play',paused:false,sched:0});
   layoutPlayers();
@@ -853,13 +955,19 @@ async function startGame(startAt){
   master.gain.cancelScheduledValues(now);master.gain.setValueAtTime(0,now);
   buses.trackGain.gain.cancelScheduledValues(now);buses.trackGain.gain.setValueAtTime(.9,now);
   buses.muffle.frequency.cancelScheduledValues(now);buses.muffle.frequency.setValueAtTime(20000,now);
+  buses.bass.gain.cancelScheduledValues(now);buses.bass.gain.setValueAtTime(.42,now);
   buses.pm.forEach((b,i)=>{b.g.gain.cancelScheduledValues(now);b.g.gain.setValueAtTime(1,now);if(b.p)b.p.pan.value=NP===2?(i?.35:-.35):0;});
   G.lat=(AC.outputLatency||0)+(AC.baseLatency||0);
   G.startTime=startAt?now+(startAt-performance.now())/1000:now+(custom?2.4:1.2);
   master.gain.setValueAtTime(.85,Math.max(now+.3,Math.min(G.startTime-.05,now+.6)));
   if(custom){
     const stems=cur.stems||[{buffer:cur.buffer,guitar:true}],anyG=stems.some(x=>x.guitar);
-    G.src=stems.map(x=>{const s=AC.createBufferSource();s.buffer=x.buffer;s.connect(x.guitar||!anyG?buses.muffle:buses.dry);s.start(G.startTime);return s;});
+    G.src=stems.map(x=>{const s=AC.createBufferSource();s.buffer=x.buffer;let to=x.guitar||!anyG?buses.muffle:buses.dry;
+      // batalha: o baixo (ou a base) de quem toca essa parte abafa sozinho quando ele erra
+      // (nos charts do GH3 o rhythm.ogg costuma ser o baixo)
+      const pt=x.part==='rhythm'&&!stems.some(y=>y.part==='bass')&&!G.players.some(p=>p.part==='rhythm')?'bass':x.part;
+      if(pt&&G.bt&&G.bt.parts&&G.players.some(p=>p.part===pt)){const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=20000;f.connect(buses.trackGain);G.partF[pt]=f;to=f;}
+      s.connect(to);s.start(G.startTime);return s;});
   }
   show(null);
   pauseBtn.hidden=false;
@@ -870,7 +978,9 @@ async function startYT(startAt,NP){
   const ch=G.songDef.chart;
   G.song={yt:true,spb:.5,bpm:120,beat0:0,events:[],endTime:ytEnd(ch)};
   G.players=[];
-  for(let i=0;i<NP;i++){const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');const c2=buildYTChart(ch,pl.diff);pl.notes=c2.notes;pl.phrases=c2.phrases;G.players.push(pl);}
+  battleSetup(NP,()=>buildYTChart(ch,'expert').notes);
+  for(let i=0;i<NP;i++){const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');const c2=buildYTChart(ch,pl.diff);pl.notes=c2.notes;pl.phrases=c2.phrases;
+    if(G.bt){pl.slot=G.bt.mine[i];if(G.bt.parts)pl.part='guitar';if(G.bt.cuts)battleSplit(pl);}G.players.push(pl);}
   Object.assign(G,{state:'play',paused:false,sched:0,ytGo:false,ytSeek:0,ytStartAt:performance.now()+1e9});
   layoutPlayers();
   master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(0,AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime+.3);
@@ -886,7 +996,7 @@ async function startRecording(videoId,rate,sync){
   initAudio();if(AC.state==='suspended')AC.resume();
   stopSource();
   G.song={yt:true,spb:.5,beat0:0,events:[],endTime:600};
-  P=makePlayer(0,'expert','tap');P.D=Object.assign({},DIFFS.expert,{win:1.4});G.players=[P];
+  P=makePlayer(0,'expert','tap');P.D=Object.assign({},DIFFS.expert,{win:1.4});G.players=[P];G.bt=null;
   G.rec={videoId,rate,notes:[],down:[null,null,null,null,null],sync:sync||null};
   Object.assign(G,{state:'record',paused:false,ytGo:false,ytStartAt:performance.now()+1e9});
   layoutPlayers();show(null);$('yt').hidden=false;pauseBtn.hidden=false;$('tapStart').hidden=true;
@@ -932,7 +1042,7 @@ function schedule(){
   while(G.sched<ev.length&&G.startTime+ev[G.sched].time<horizon){
     const e=ev[G.sched++],t=G.startTime+e.time;
     if(t<AC.currentTime-.03)continue;
-    if(e.type==='lead'){for(const p of G.players)if(!p.out)SYN.lead(t,e,G.song.spb,buses.pm[p.i].g,G.players.length>1?.7:1);}
+    if(e.type==='lead'){for(const b of leadBuses(e.time))SYN.lead(t,e,G.song.spb,b.g,b.v);}
     else SYN[e.type](t,e,G.song.spb);
   }
 }
@@ -1010,7 +1120,7 @@ function updatePlayer(t){
   if(P.spActive){P.energy-=dt/G.song.spb/64;if(P.energy<=0){P.energy=0;P.spActive=false;}}
   if(P.meter<=0){
     if(P.diff==='easy')P.meter=.02;
-    else{P.meter=0;P.out=true;P.outT=t;P.spActive=false;buses.pm[P.i].g.gain.setTargetAtTime(0,AC.currentTime,.02);if(G.players.length>1){msg('VAIADO!','#e5383b');sfxCrowd(AC.currentTime,1.6,.35,true);}}
+    else{P.meter=0;P.out=true;P.outT=t;P.spActive=false;buses.pm[P.i].g.gain.setTargetAtTime(0,AC.currentTime,.02);if(P.part==='bass'&&!G.song.custom&&!G.song.yt)buses.bass.gain.setTargetAtTime(0,AC.currentTime,.02);const pf=G.partF&&G.partF[P.part];if(pf)pf.frequency.setTargetAtTime(500,AC.currentTime,.02);if(G.players.length>1){msg('VAIADO!','#e5383b');sfxCrowd(AC.currentTime,1.6,.35,true);}}
   }
 }
 function update(t){
@@ -1355,23 +1465,24 @@ function zOf(time,t){return(time-t)/P.D.win*ZMAX;}
 function drawTail(n,t){
   const z1=Math.max(n.hit&&!n.holding?0:-.5,zOf(n.holding?Math.max(t,n.time):n.time,t)),z2=Math.min(ZMAX,zOf(n.endTime,t));
   if(z2<=-.5||z1>=ZMAX||z2<=z1)return;
-  const col=n.missed||(n.hit&&!n.holding)?'rgba(120,110,110,.6)':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
+  const col=n.ghost||n.missed||(n.hit&&!n.holding)?'rgba(120,110,110,.6)':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
+  if(n.ghost)c.globalAlpha=.35;
   const steps=14,w=P.laneW*.13;c.fillStyle=col;c.beginPath();
   const pts=[];for(let i=0;i<=steps;i++){const z=z1+(z2-z1)*i/steps,p=pz(z);const wob=n.holding?Math.sin(performance.now()/40+i*1.3)*P.laneW*.06*p:0;pts.push([laneX(n.lane,p)+wob,yAt(p),w*p]);}
   pts.forEach(([x,y,ww],i)=>i?c.lineTo(x-ww,y):c.moveTo(x-ww,y));for(let i=pts.length-1;i>=0;i--)c.lineTo(pts[i][0]+pts[i][2],pts[i][1]);
-  c.closePath();if(n.holding){c.shadowColor=col;c.shadowBlur=16;}c.fill();c.shadowBlur=0;
+  c.closePath();if(n.holding){c.shadowColor=col;c.shadowBlur=16;}c.fill();c.shadowBlur=0;c.globalAlpha=1;
 }
 function drawGem(n,t){
   const z=zOf(n.time,t);if(z>ZMAX||z<-.55)return;const p=pz(z),x=laneX(n.lane,p),y=yAt(p),r=P.laneW*.4*p,ry=r*.6;
   const phraseOk=n.star>=0&&!P.phrases[n.star].broken;
-  const col=n.missed?'#5a4f52':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
-  c.globalAlpha=n.missed?.55:1;
+  const dim=n.missed||n.ghost,col=dim?'#5a4f52':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
+  c.globalAlpha=n.ghost?.32:n.missed?.55:1;
   c.fillStyle='rgba(0,0,0,.55)';ell(x,y+ry*.35,r*1.04,ry*1.04);
   if(phraseOk&&!n.missed){
     c.shadowColor='#bff5ff';c.shadowBlur=18*p;c.fillStyle='#eafcff';starPath(x,y,r*1.15,.62);c.fill();c.shadowBlur=0;
     c.fillStyle=col;starPath(x,y,r*.8,.62);c.fill();
   }else{
-    const dep=ry*.55,dark=n.missed?'#2e2729':cached('s45'+col,()=>shade(col,.45));
+    const dep=ry*.55,dark=dim?'#2e2729':cached('s45'+col,()=>shade(col,.45));
     c.fillStyle=dark;ell(x,y+dep,r,ry);c.fillRect(x-r,y,r*2,dep);
     c.fillStyle='#1b1416';ell(x,y+dep*.55,r*.98,ry*.98);
     c.fillStyle='#f2ece4';ell(x,y,r,ry);
@@ -1486,7 +1597,8 @@ function drawHUD(now,t){
   const tw=wide?undefined:Math.max(40,(x1>=W-1?x1-70:x1-12)-sx);
   c.textAlign=align;c.fillStyle='#f7ecdf';c.font=`700 ${wide?34:24}px "Chakra Petch",sans-serif`;c.fillText(P.score.toLocaleString('pt-BR'),sx,sy,tw);
   c.font=`600 ${wide?13:11}px "Chakra Petch",sans-serif`;c.fillStyle='rgba(247,236,223,.6)';
-  c.fillText(P.combo>=5?`SEQUÊNCIA ${P.combo}`:two?`JOGADOR ${P.i+1} · ${P.D.label.toUpperCase()}`:G.songDef.name.toUpperCase().slice(0,34),sx,sy+(wide?22:17),tw);
+  const ptag=P.part&&G.bt&&G.bt.parts?PART_NAMES[P.part].toUpperCase():'';
+  c.fillText(P.combo>=5?`SEQUÊNCIA ${P.combo}`:two?`JOGADOR ${P.i+1} · ${ptag?ptag+' · ':''}${P.D.label.toUpperCase()}`:ptag?`${ptag} · ${P.D.label.toUpperCase()}`:G.songDef.name.toUpperCase().slice(0,34),sx,sy+(wide?22:17),tw);
   const m=mult(),mc=P.spActive?'#7fe9ff':['#e8ddd0','#ff8a1f','#2fd35a','#b56bff'][multBase()-1];
   drawMultDial(mx,my,mr,m,mc,now);
   drawRockMeter(gx,gy,gr,now);
@@ -1499,8 +1611,18 @@ function drawHUD(now,t){
   for(const x of P.texts){const age=(now-x.t)/600;if(age>1)continue;c.globalAlpha=1-age;c.fillStyle=x.big?'#ffd23b':'#fff';c.font=`700 ${x.big?30:Math.max(14,laneW*.3)}px "Chakra Petch",sans-serif`;c.fillText(x.s,CX,hitY-laneW*1.4-age*30-(x.big?40:0));}
   for(const x of P.msgs){const age=(now-x.t)/1400;if(age>1)continue;c.globalAlpha=Math.min(1,(1-age)*2.5);const s=1+(1-Math.min(1,age*6))*.4;c.save();c.translate(CX,H*(narrow||two?.42:.32));c.scale(s,s);c.fillStyle=x.c;c.shadowColor=x.c;c.shadowBlur=20;c.font=`400 ${Math.min(56,(x1-x0)*.09)}px "Metal Mania",Impact,sans-serif`;c.fillText(x.s,0,0,(x1-x0)*.92);c.restore();}
   c.globalAlpha=1;
+  // revezamento: avisa de quem é a vez e escurece a pista de quem está esperando
+  if(G.bt&&G.bt.cuts&&!P.out){
+    const k=turnIndex(t+1.2),o=k%G.bt.n,mine=o===P.slot;
+    if(k!==P.btK){P.btK=k;if(mine&&G.state==='play'&&t>-1.5)msg('SUA VEZ!','#ffd23b');}
+    if(!mine&&G.state==='play'){
+      const e=boardW/2*1.16,pF=pz(ZMAX),pN=pz(-.5),yF=yAt(pF),yN=yAt(pN);c.fillStyle='rgba(8,4,10,.38)';c.beginPath();c.moveTo(CX-e*pF,yF);c.lineTo(CX+e*pF,yF);c.lineTo(CX+e*pN,yN+20);c.lineTo(CX-e*pN,yN+20);c.closePath();c.fill();
+      c.fillStyle='rgba(255,210,59,.92)';c.font=`400 ${Math.min(38,boardW*.11)}px "Metal Mania",Impact,sans-serif`;
+      c.fillText(two?`VEZ DO JOGADOR ${o+1}`:`VEZ DE ${String(G.bt.names[o]||'OUTRO').toUpperCase()}`,CX,H*.55,boardW*.95);
+    }
+  }
   if(P.out){const e=boardW/2*1.16,pF=pz(ZMAX),pN=pz(-.5),yF=yAt(pF),yN=yAt(pN);c.fillStyle='rgba(8,4,10,.6)';c.beginPath();c.moveTo(CX-e*pF,yF);c.lineTo(CX+e*pF,yF);c.lineTo(CX+e*pN,yN+20);c.lineTo(CX-e*pN,yN+20);c.closePath();c.fill();c.fillStyle='#e5383b';c.font=`400 ${Math.min(44,boardW*.14)}px "Metal Mania",Impact,sans-serif`;c.fillText('VAIADO',CX,H*.55);}
-  if(t<0){c.fillStyle='rgba(255,255,255,.85)';c.font=`400 ${Math.min(64,(x1-x0)*.11)}px "Metal Mania",Impact,sans-serif`;c.fillText(two?`JOGADOR ${P.i+1}`:'PREPARE-SE',CX,H*.4);}
+  if(t<0){c.fillStyle='rgba(255,255,255,.85)';c.font=`400 ${Math.min(64,(x1-x0)*.11)}px "Metal Mania",Impact,sans-serif`;c.fillText(two?`JOGADOR ${P.i+1}${ptag?' · '+ptag:''}`:ptag?`VOCÊ: ${ptag}`:'PREPARE-SE',CX,H*.4,(x1-x0)*.92);}
   if(P.i===0&&G.online)drawBoard();
 }
 
@@ -1533,8 +1655,12 @@ function frame(){
       drawHighway(t);
       const end=t+P.D.win+.1;let i=Math.max(0,P.cursor-30),j=i;
       while(j<P.notes.length&&P.notes[j].time<end)j++;
+      // revezamento: as notas dos outros passam apagadas
+      let gi=0,gj=0;
+      if(P.ghost){gi=P.gcur;while(gi<P.ghost.length&&P.ghost[gi].endTime<t-.6)gi++;P.gcur=gi;gj=gi;while(gj<P.ghost.length&&P.ghost[gj].time<end)gj++;for(let k=gj-1;k>=gi;k--){const n=P.ghost[k];if(n.len>0)drawTail(n,t);}}
       for(let k=j-1;k>=i;k--){const n=P.notes[k];if(n.len>0&&!n.done)drawTail(n,t);}
       drawFrets(now);
+      for(let k=gj-1;k>=gi;k--)drawGem(P.ghost[k],t);
       for(let k=j-1;k>=i;k--){const n=P.notes[k];if(!n.hit)drawGem(n,t);}
       drawFx(dt);drawHUD(now,t);
     }
@@ -1645,7 +1771,7 @@ function results(ok){
   const body=$('resBody');$('againBtn').disabled=false;
   if(G.online&&G.net&&G.players.length===1){
     G.myEnd={ok};const me=G.players[0];
-    if(ok&&!me.out)placarSend(G.songDef,me).catch(()=>{});
+    if(ok&&!me.out&&!G.bt)placarSend(G.songDef,me).catch(()=>{});
     setTimeout(()=>{if(G.players[0]!==me||(G.state!=='done'&&G.state!=='fail'))return;G.resultsAt=performance.now();renderOnlineResults();show('results');$('againBtn').focus();},ok?900:1200);
     return;
   }
@@ -1668,9 +1794,9 @@ function results(ok){
   }else{
     const[a,b]=G.players;
     const win=!ok?-1:(a.out!==b.out?(a.out?1:0):(a.score===b.score?-1:(a.score>b.score?0:1)));
-    $('resEyebrow').textContent=`${name} · duelo`;
+    $('resEyebrow').textContent=`${name} · ${G.bt?BATTLES[G.bt.mode].label.toLowerCase():'duelo'}`;
     $('resTitle').textContent=!ok?'A plateia vaiou os dois':win<0?'Empate!':`Jogador ${win+1} venceu!`;
-    body.innerHTML=`<div class="versus">${G.players.map(p=>{const pct=p.notes.length?Math.round(p.hits/p.notes.length*100):0;return`<div class="${p.i===win?'win':''}"><div class="who">Jogador ${p.i+1} · ${p.D.label}</div><div class="sc">${p.score.toLocaleString('pt-BR')}</div><div class="ln">${pct}% das notas<br>sequência de ${p.maxCombo}${p.out?'<br>foi vaiado':''}</div></div>`;}).join('')}</div>`;
+    body.innerHTML=`<div class="versus">${G.players.map(p=>{const pct=p.notes.length?Math.round(p.hits/p.notes.length*100):0;return`<div class="${p.i===win?'win':''}"><div class="who">Jogador ${p.i+1} · ${p.part&&G.bt&&G.bt.parts?PART_NAMES[p.part]+' · ':''}${p.D.label}</div><div class="sc">${p.score.toLocaleString('pt-BR')}</div><div class="ln">${pct}% das notas<br>sequência de ${p.maxCombo}${p.out?'<br>foi vaiado':''}</div></div>`;}).join('')}</div>`;
   }
   $('againBtn').textContent=ok?'Tocar de novo':'Tentar de novo';
   setTimeout(()=>{G.resultsAt=performance.now();show('results');$('againBtn').focus();},ok?900:1200);
@@ -1679,18 +1805,19 @@ function results(ok){
 function renderOnlineResults(){
   const net=G.net||G.netLast,me=G.players[0];if(!me||!net)return;
   const name=G.songDef.name,pct=(h,n)=>n?Math.round(h/n*100):0;
-  const rows=netSongPlayers(net).map(p=>{
+  const pp=G.bt&&G.bt.parts&&G.bt.parts.length>1?G.bt.parts:null;
+  const rows=netSongPlayers(net).map((p,si)=>{
     const mine=p.id===net.myId,e=mine?G.myEnd&&{ok:G.myEnd.ok,quit:false,s:me.score,h:me.hits,n:me.notes.length,mc:me.maxCombo,out:me.out,diff:me.diff}:net.ends[p.id];
     const gone=!mine&&!netIsHere(net,p.id),live=!mine&&net.live[p.id];
     const s=e?e.s:mine?me.score:live?live.s:0;
     const status=e?(e.quit?2:e.out?1:0):gone?2:-1; // -1 ainda tocando, 0 terminou, 1 vaiado, 2 saiu
     const ln=status===-1?'ainda tocando…':status===2?'saiu antes do fim':`${pct(e.h,e.n)}% das notas · sequência de ${e.mc}${e.out?' · vaiado':''}`;
-    return{mine,name:mine?'Você':p.name,diff:e&&DIFFS[e.diff]?DIFFS[e.diff].label:'',s,status,ln};
+    return{mine,name:mine?'Você':p.name,diff:(pp?PART_NAMES[pp[si%pp.length]]+(e&&DIFFS[e.diff]?' · ':''):'')+(e&&DIFFS[e.diff]?DIFFS[e.diff].label:''),s,status,ln};
   });
   const waiting=rows.filter(r=>r.status===-1).length;
   rows.sort((a,b)=>(a.status===2)-(b.status===2)||(a.status===1)-(b.status===1)||b.s-a.s);
   const mi=rows.findIndex(r=>r.mine),tie=mi>=0&&rows.length>1&&rows.filter(r=>r.s===rows[0].s&&r.status===rows[0].status).length>1&&rows[mi].s===rows[0].s&&rows[mi].status===rows[0].status;
-  $('resEyebrow').textContent=`${name} · sala online`;
+  $('resEyebrow').textContent=`${name} · ${G.bt?BATTLES[G.bt.mode].label.toLowerCase():'sala online'}`;
   $('resTitle').textContent=waiting?`Esperando ${waiting===1?'1 jogador':waiting+' jogadores'} terminar…`:rows.length<2?'Você terminou':tie?'Empate no topo!':mi===0?'Você venceu!':`Você ficou em ${mi+1}º lugar`;
   $('resBody').innerHTML=`<ol class="rank">${rows.map((r,i)=>`<li class="${r.mine?'me':''}${i===0&&!waiting&&rows.length>1?' win':''}"><span class="pos">${i+1}º</span><span class="who"><b>${escH(r.name)}</b>${r.diff?` · ${escH(r.diff)}`:''}<small>${r.ln}</small></span><span class="sc">${(+r.s||0).toLocaleString('pt-BR')}</span></li>`).join('')}</ol>`;
   const ab=$('againBtn'),on=G.net&&G.net.connected;
@@ -1916,7 +2043,7 @@ function cleanPlayers(a){return Array.isArray(a)?a.slice(0,NET_MAX).filter(p=>p&
 function netHostData(net,pl,d){
   if(!d||typeof d!=='object')return;
   switch(d.t){
-    case'hello':pl.name=cleanName(d.name);pl.diff=DIFFS[d.diff]?d.diff:null;pl.hello=true;netSendTo(pl.conn,{t:'welcome',id:pl.id});netSendTo(pl.conn,{t:'lobby',song:songDesc()});netRoster(net);if(menuOpen())buildMenu();break;
+    case'hello':pl.name=cleanName(d.name);pl.diff=DIFFS[d.diff]?d.diff:null;pl.hello=true;netSendTo(pl.conn,{t:'welcome',id:pl.id});netSendTo(pl.conn,{t:'lobby',song:songDesc(),b:G.battle});netRoster(net);if(menuOpen())buildMenu();break;
     case'bye':netDropPeer(net,pl);break;
     case'diff':pl.diff=DIFFS[d.diff]?d.diff:null;netRoster(net);if(menuOpen())buildMenu();break;
     case'ping':netSendTo(pl.conn,{t:'pong',a:d.a,b:performance.now()});break;
@@ -1940,12 +2067,12 @@ function netGuestData(net,d){
       const best=net.samples.reduce((x,y)=>y[0]<x[0]?y:x);net.rtt=best[0];net.offset=best[1];
       if(menuOpen())buildNetBox();break;
     }
-    case'lobby':net.hostSong=d.song&&typeof d.song==='object'?d.song:null;netLibHave();if(menuOpen())buildMenu();break;
+    case'lobby':net.hostSong=d.song&&typeof d.song==='object'?d.song:null;net.hostBattle=BATTLES[d.b]?d.b:'same';netLibHave();if(menuOpen())buildMenu();break;
     case'start':
       net.round=num(d.r);
       // ainda tocando a rodada anterior ou gravando: avisa que fica de fora desta
       if(G.state==='play'||G.state==='record'){netSend({t:'end',r:net.round,ok:false,quit:true,s:0,h:0,n:0,mc:0,out:false,diff:G.diffs[0]});break;}
-      net.inSong=cleanPlayers(d.players);net.ends={};net.live={};
+      net.inSong=cleanPlayers(d.players);net.ends={};net.live={};G.netBattle=BATTLES[d.b]?d.b:'same';
       show(null);netStartLocal(d.song,num(d.at)-net.offset);break;
     case'sts':if(d.r===net.round&&d.l&&typeof d.l==='object'){const o={};for(const k of Object.keys(d.l).slice(0,NET_MAX))o[k.slice(0,8)]=cleanSt(d.l[k]);net.live=o;}break;
     case'end':{const id=String(d.id).slice(0,8);if(id===net.myId||d.r!==net.round)break;net.ends[id]=cleanEnd(d);if(!$('results').hidden)renderOnlineResults();break;}
@@ -1969,8 +2096,8 @@ function descToDef(s){
 }
 function netSendLobby(){
   const net=G.net;if(!net||!net.host)return;
-  const d=songDesc(),key=descKey(d);
-  if(net.lobbyKey!==key){net.lobbyKey=key;netSend({t:'lobby',song:d});}
+  const d=songDesc(),key=descKey(d)+'|'+G.battle;
+  if(net.lobbyKey!==key){net.lobbyKey=key;netSend({t:'lobby',song:d,b:G.battle});}
 }
 // convidado: avisa o criador se já tem a música da biblioteca escolhida
 function netLibHave(){
@@ -1995,10 +2122,12 @@ function netHostStart(){
   const net=G.net;if(!net||!net.host||!net.connected||G.state==='play'||netGuestsPlaying(net))return;
   const d=songDesc();if(d.kind==='file')return;
   if(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d)))return;
+  if(battleBlocked(G.songDef))return;
   const at=performance.now()+(d.kind==='yt'?5000:3000);
   net.round=(net.round|0)+1;
   net.inSong=net.roster.map(p=>({id:p.id,name:p.name,diff:p.diff}));net.ends={};net.live={};
-  netSend({t:'start',song:d,at,players:net.inSong,r:net.round});
+  G.netBattle=G.battle;
+  netSend({t:'start',song:d,at,players:net.inSong,r:net.round,b:G.battle});
   netStartLocal(d,at);
 }
 function netStartLocal(d,atLocal){
@@ -2204,6 +2333,20 @@ function buildMenu(){
   [[1,'Sozinho'],[2,'2 no mesmo PC'],['online','Online']].forEach(([n,l])=>{const b=document.createElement('button');b.textContent=l;b.setAttribute('aria-pressed',n==='online'?G.online:(!G.online&&G.nPlayers===n));
     b.onclick=()=>{if(n==='online'){G.online=true;G.nPlayers=1;}else{G.online=false;G.nPlayers=n;netReset();netStatus('');}savePrefs();buildMenu();};pl.appendChild(b);});
   $('netBox').hidden=!G.online;if(G.online)buildNetBox();
+  {
+    const bb=$('battleBox'),on=G.online||G.nPlayers>1;bb.hidden=!on;
+    if(on){
+      const gst=G.online&&G.net&&G.net.connected&&!G.net.host,cur=gst?(BATTLES[G.net.hostBattle]?G.net.hostBattle:'same'):G.battle;
+      const def=gst?(G.net.hostSong?descToDef(G.net.hostSong):null):G.songDef,ps=songParts(def);
+      const bx=$('battles');bx.innerHTML='';
+      for(const[k,v]of Object.entries(BATTLES)){const b=document.createElement('button');b.textContent=v.label;b.setAttribute('aria-pressed',k===cur);b.disabled=gst;b.onclick=()=>{G.battle=k;savePrefs();buildMenu();};bx.appendChild(b);}
+      const who=G.online?'Cada um toca uma parte, na ordem da sala: ':'O jogador 1 fica com a guitarra e o jogador 2 com ',pn=x=>PART_NAMES[x].toLowerCase();
+      let h=cur!=='parts'?BATTLES[cur].hint:!def?'':ps===null?'Carregando a música para ver as partes que ela tem…':ps.length<2?'Essa música só tem a guitarra. Escolha uma das 3 músicas do jogo, um chart do Clone Hero com baixo ou guitarra base, ou use o Revezamento.'
+        :(G.online?who+ps.map(pn).join(', ')+'.':who+pn(ps[1])+'.')+' Quando alguém erra, a parte dele some da música.';
+      if(gst)h='Quem criou a sala escolhe. '+h;
+      $('battleHint').textContent=h;
+    }
+  }
   const dd=$('diffs');dd.innerHTML='';
   for(let i=0;i<G.nPlayers;i++){
     const row=document.createElement('div');row.className='seg';
@@ -2230,6 +2373,7 @@ function buildMenu(){
     else if(!net.host){pb.disabled=true;pb.textContent='Esperando '+netHostName(net)+' começar';if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netSend({t:'diff',diff:G.diffs[0]});}}
     else{const d=songDesc();if(d.kind==='file'||(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d))))pb.disabled=true;if(netGuestsPlaying(net)){pb.disabled=true;pb.textContent='Esperando todos terminarem';}netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netRoster(net);}}
   }
+  if(!(G.online&&G.net&&G.net.connected&&!G.net.host)&&battleBlocked(G.songDef))pb.disabled=true;
   if(G.songDef.yt||(G.online&&G.net&&G.net.hostSong&&G.net.hostSong.kind==='yt'))loadYTApi().catch(()=>{});
   placarRender();
 }
@@ -2382,7 +2526,7 @@ const isChartFile=n=>/\.(chart|mid|midi)$/i.test(n);
 const isStem=n=>/\.(ogg|opus|mp3|wav|m4a|flac|aac|webm)$/i.test(n)&&!/^(preview|crowd|video|background)\b/i.test(n);
 function pickChart(names){return names.find(n=>/^notes\.chart$/i.test(n))||names.find(n=>/^notes\.midi?$/i.test(n))||names.find(n=>/\.chart$/i.test(n))||names.find(n=>/\.midi?$/i.test(n))||null;}
 async function chartFrom(name,ab){return/\.chart$/i.test(name)?parseChartText(new TextDecoder().decode(ab)):parseMidi(ab);}
-function applyDelay(chart,ms){const s=(+ms||0)/1000;if(!s)return chart;for(const k in chart.diffs)chart.diffs[k].forEach(n=>n.time=+(n.time+s).toFixed(3));for(const k in chart.sp)chart.sp[k].forEach(w=>{w[0]+=s;w[1]+=s;});chart.beats=chart.beats.map(b=>b+s);chart.last+=s;return chart;}
+function applyDelay(chart,ms){const s=(+ms||0)/1000;if(!s)return chart;for(const c of[chart,...Object.values(chart.parts||{})]){for(const k in c.diffs)c.diffs[k].forEach(n=>n.time=+(n.time+s).toFixed(3));for(const k in c.sp)c.sp[k].forEach(w=>{w[0]+=s;w[1]+=s;});}chart.beats=chart.beats.map(b=>b+s);chart.last+=s;return chart;}
 function makeMeta(chart,info,extra){
   const id=chartHash(chart);applyDelay(chart,info.delay);
   return Object.assign({id,name:String(info.name||chart.name||'Música sem nome').trim().slice(0,120),artist:String(info.artist||chart.artist||'').trim().slice(0,80),charter:String(info.charter||info.frets||'').replace(/<[^>]*>/g,'').trim().slice(0,60),
@@ -2431,6 +2575,19 @@ function sumInto(a,b){
   for(let c=0;c<ch;c++){const o=out.getChannelData(c),x=b.getChannelData(Math.min(c,b.numberOfChannels-1));for(let i=0;i<x.length;i++)o[i]+=x[i];}
   return out;
 }
+// charts importados antes do modo batalha: lê o arquivo de novo para achar o baixo e a guitarra base
+async function libAddParts(data,files,save){
+  data.chart.parts={};
+  for(const cn of files.map(f=>f.name).filter(isChartFile).sort((a,b)=>/\.chart$/i.test(b)-/\.chart$/i.test(a))){
+    try{
+      const c2=await chartFrom(cn,await files.find(f=>f.name===cn).ab());
+      const k=Object.keys(c2.diffs).find(x=>data.chart.diffs[x]&&data.chart.diffs[x].length);
+      if(k)applyDelay(c2,(data.chart.diffs[k][0].time-c2.diffs[k][0].time)*1000);
+      data.chart.parts=c2.parts||{};break;
+    }catch(e){}
+  }
+  if(save)try{await idbTx('data','readwrite',tx=>tx.objectStore('data').put(data));}catch(e){}
+}
 async function libLoad(m,gesture,job){
   const live=()=>{if(job&&LIB.loading!==job)throw new Error('cancel');};
   if(m.house)return houseSong(m,live);
@@ -2443,21 +2600,28 @@ async function libLoad(m,gesture,job){
     let d=await libDir(gesture);
     try{for(const seg of data.path)d=await d.getDirectoryHandle(seg);}catch(e){throw new Error('gone');}
     if(data.src==='dirsng'){let f;try{f=await (await d.getFileHandle(data.file)).getFile();}catch(e){throw new Error('gone');}files=parseSng(await f.arrayBuffer()).files;}
-    else files=data.stems.map(n=>({name:n,ab:async()=>(await (await d.getFileHandle(n)).getFile()).arrayBuffer()}));
+    else{files=data.stems.map(n=>({name:n,ab:async()=>(await (await d.getFileHandle(n)).getFile()).arrayBuffer()}));
+      if(!data.chart.parts)for(const n of['notes.chart','notes.mid'])files.push({name:n,ab:async()=>(await (await d.getFileHandle(n)).getFile()).arrayBuffer()});}
   }else files=data.stems.map(s=>({name:s.name,ab:()=>s.blob.arrayBuffer()}));
+  if(!data.chart.parts)await libAddParts(data,files,!(LIB.mem&&LIB.mem[m.id]));
   if(!m.cover&&!data.cover0){data.cover0=1;const cv=await coverThumb(files);if(cv){m.cover=cv;try{await idbTx('meta','readwrite',tx=>tx.objectStore('meta').put(m));}catch(e){}if(G.state==='menu'&&!$('menu').hidden)buildMenu();}}
   return decodeStems(m,data.chart,files,live);
 }
 async function decodeStems(m,chart,files,live){
-  let mix=null,gtr=null;
+  let mix=null,gtr=null;const other={};
   for(const f of files.filter(f=>isStem(f.name))){
     live();let buf;try{buf=await decodeAB(await f.ab());}catch(e){continue;}
-    if(/^guitar\b/i.test(f.name))gtr=gtr?sumInto(gtr,buf):buf;else mix=mix?sumInto(mix,buf):buf;
+    const pt=(f.name.match(/^(bass|rhythm)\b/i)||[])[1];
+    if(/^guitar\b/i.test(f.name))gtr=gtr?sumInto(gtr,buf):buf;
+    else if(pt){const k=pt.toLowerCase();other[k]=other[k]?sumInto(other[k],buf):buf;} // separados para o modo batalha
+    else mix=mix?sumInto(mix,buf):buf;
     await new Promise(r=>setTimeout(r,0));
   }
-  live();if(!mix&&!gtr)throw new Error('decode');
+  live();
   const stems=[];if(mix)stems.push({buffer:mix,guitar:false});if(gtr)stems.push({buffer:gtr,guitar:true});
-  return{id:m.id,name:m.name,chart,stems,buffer:mix||gtr,dur:Math.max(...stems.map(s=>s.buffer.duration))};
+  for(const k in other)stems.push({buffer:other[k],guitar:false,part:k});
+  if(!stems.length)throw new Error('decode');
+  return{id:m.id,name:m.name,chart,stems,buffer:mix||gtr||stems[0].buffer,dur:Math.max(...stems.map(s=>s.buffer.duration))};
 }
 function libErrText(e){const m=e&&e.message;return m==='perm'?'O navegador precisa da sua permissão para ler a pasta do Clone Hero. Toque na música e aceite.':m==='gone'?'Não achei os arquivos dessa música. Se ela veio da pasta do Clone Hero, procure músicas na pasta de novo.':m==='decode'?'Este navegador não conseguiu tocar o áudio dessa música. Tente o Chrome ou o Edge.':'Não consegui abrir essa música.';}
 function libEnsure(m,gesture,quiet){
