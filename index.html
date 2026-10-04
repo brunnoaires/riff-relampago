@@ -839,7 +839,7 @@ const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.song
 // ---------- batalha: cada um toca uma parte, ou duelo de trechos ----------
 const BATTLES={same:{label:'Mesmo chart',hint:'Todo mundo toca o mesmo chart e ganha quem fizer mais pontos.'},
   parts:{label:'Partes separadas',hint:''},
-  turns:{label:'Duelo',hint:'A música é dividida em trechos e cada um toca os seus, um de cada vez. As notas dos outros passam apagadas na sua pista.'}};
+  turns:{label:'Duelo',hint:'A música é dividida em trechos e cada um toca os seus. As frases de estrela dão ataques do Guitar Hero 3 (corda quebrada, canhoto, alavanca e outros) para soltar no outro com a tecla de Poder Estelar.'}};
 const PART_NAMES={guitar:'Guitarra',bass:'Baixo',rhythm:'Guitarra base'};
 // partes que a música tem (null = a música ainda está carregando)
 function songParts(def){
@@ -910,7 +910,145 @@ function leadBuses(time){
   if(bt&&bt.mode==='parts'){const gs=live.filter(p=>p.part==='guitar');if(gs.length)return gs.map(p=>({g:buses.pm[p.i].g,v:gs.length>1?.7:1}));return G.players.some(p=>p.part==='guitar')?[]:free;}
   return live.map(p=>({g:buses.pm[p.i].g,v:G.players.length>1?.7:1}));
 }
-function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0};}
+// ---------- duelo: ataques do Guitar Hero 3 ----------
+// No Duelo as frases de estrela dão ataques (guarda até 3) em vez de Poder Estelar.
+// A tecla de Poder Estelar solta o mais antigo em quem está tocando (ou em quem toca depois de você).
+// O ataque só vale na vez de quem foi atacado: se chegar antes, espera a vez dele.
+const ATK={
+  overload:{name:'Amplificador estourado',tag:'AMP',col:'#ff8a1f',dur:8,hit:'O AMPLIFICADOR ESTOUROU!'},
+  string:{name:'Corda quebrada',tag:'CORDA',col:'#e5383b',taps:{easy:3,medium:5,hard:7,expert:9},hit:'CORDA QUEBRADA!'},
+  diffup:{name:'Dificuldade maior',tag:'DIF +',col:'#b56bff',dur:10,hit:''},
+  double:{name:'Notas em dobro',tag:'DOBRO',col:'#2fd35a',dur:8,hit:'NOTAS EM DOBRO!'},
+  lefty:{name:'Canhoto',tag:'CANHOTO',col:'#3fc6ee',dur:8,hit:'CANHOTO!'},
+  whammy:{name:'Alavanca',tag:'ALAVANCA',col:'#ffd23b',taps:{easy:4,medium:6,hard:8,expert:10},hit:'TRAVOU!'},
+  steal:{name:'Roubo',tag:'ROUBO',col:'#f7ecdf'},
+};
+const duelOn=()=>!!(G.bt&&G.bt.mode==='turns');
+const nextDiff=dk=>({easy:'medium',medium:'hard',hard:'expert'})[dk]||null;
+const myTurnAt=(p,t)=>turnOwner(t+1.2)===p.slot;
+const duelVis=(p,k,t)=>p.eff.some(e=>e.k===k&&e.on)&&myTurnAt(p,t);
+const duelLock=(p,t)=>{const e=p.eff.find(x=>x.k==='whammy'&&x.on);return e&&myTurnAt(p,t)?e:null;};
+const whoLabel=f=>!f?'':f.i!=null?(G.players.length>1?'JOGADOR '+(f.i+1):''):String(f.name||'').toUpperCase().slice(0,14);
+function duelTarget(p,t){
+  const n=G.bt.n,k=turnIndex(t+1.2);let o=k%n;if(o===p.slot)o=(k+1)%n;
+  const lp=G.players.find(q=>q.slot===o);
+  if(lp)return{p:lp,name:whoLabel(lp),diff:lp.diff};
+  const e=G.net&&G.net.inSong&&G.net.inSong[o];
+  return e&&e.id!==G.net.myId?{id:e.id,name:whoLabel(e),diff:e.diff}:null;
+}
+const withP=(p,f)=>{const prev=P;P=p;try{f();}finally{P=prev;}};
+function gainAttack(t){
+  if(P.atk.length>=3){msg('ATAQUES CHEIOS','#9feeff');return;}
+  const tg=duelTarget(P,t),pool=Object.keys(ATK).filter(k=>k!=='diffup'||!tg||nextDiff(tg.diff));
+  const k=pool[Math.floor(Math.random()*pool.length)];P.atk.push(k);
+  msg('GANHOU: '+ATK[k].name.toUpperCase(),'#9feeff');
+}
+// tecla de Poder Estelar no Duelo: destrava a alavanca ou solta um ataque
+function duelKey(){
+  const t=songT(),lk=duelLock(P,t);
+  if(lk){lk.need--;pushText('ALAVANCA '+Math.max(0,lk.need));sfxTick();if(lk.need<=0)effectDone(P,lk);return;}
+  if(!P.atk.length)return;
+  const tg=duelTarget(P,t);if(!tg)return;
+  const k=P.atk.shift();sfxAttack();
+  msg(`${ATK[k].name.toUpperCase()}${tg.name?' EM '+tg.name:''}!`,ATK[k].col);
+  if(tg.p)applyAttack(tg.p,k,P);else netAtk(tg.id,k);
+}
+// chegou um ataque em p (from: jogador local ou {id,name} de alguém da sala)
+function applyAttack(p,k,from){
+  if(!ATK[k]||p.out||G.state!=='play')return;
+  const who=whoLabel(from),t=songT();
+  if(k==='steal'){
+    const got=p.atk.splice(0);
+    withP(p,()=>msg(got.length?`${who||'ALGUÉM'} ROUBOU SEUS ATAQUES!`:`${who||'ALGUÉM'} TENTOU ROUBAR`,'#e5383b'));
+    if(from&&from.i!=null)receiveGift(from,got);else if(from&&from.id)netAtk(from.id,'gift',got);
+    return;
+  }
+  if(k==='diffup'&&!p.alt)k='double';
+  const A=ATK[k],e=p.eff.find(x=>x.k===k);
+  if(e&&A.taps)e.need+=A.taps[p.diff]||6;
+  else if(e&&!A.taps&&k!=='diffup'&&k!=='double')e.left+=A.dur*.5;
+  else p.eff.push({k,left:A.taps?12:A.dur,need:A.taps?A.taps[p.diff]||6:0,on:false,lane:-1});
+  sfxHurt();
+  if(!myTurnAt(p,t))withP(p,()=>msg(`${who?who+' PREPAROU':'VEM AÍ'}: ${A.name.toUpperCase()}`,'#e5383b'));
+}
+function receiveGift(p,got){
+  const room=Math.max(0,3-p.atk.length),list=got.filter(k=>ATK[k]).slice(0,room);p.atk.push(...list);
+  withP(p,()=>msg(list.length?`ROUBOU ${list.length} ${list.length>1?'ATAQUES':'ATAQUE'}!`:'NADA PARA ROUBAR','#9feeff'));
+}
+// o ataque começa a valer (na vez de quem foi atacado)
+function effectStart(p,e,t){
+  e.on=true;
+  if(e.k==='string'){
+    const cnt=[0,0,0,0,0];for(let i=p.cursor;i<p.notes.length&&p.notes[i].time<t+6;i++)cnt[p.notes[i].lane]++;
+    let best=Math.min(2,p.D.lanes-1);for(let l=0;l<5;l++)if(cnt[l]>cnt[best])best=l;e.lane=best;sfxSnap();
+  }
+  if(e.k==='diffup'||e.k==='double')reshapeNotes(p,e,t);
+  const txt=e.k==='diffup'?`AGORA NO ${DIFFS[nextDiff(p.diff)].label.toUpperCase()}!`:ATK[e.k].hit;
+  if(txt)withP(p,()=>msg(txt,ATK[e.k].col));
+}
+function effectDone(p,e){
+  const i=p.eff.indexOf(e);if(i<0)return;p.eff.splice(i,1);
+  if(e.k==='string')withP(p,()=>msg('CORDA CONSERTADA!','#2fd35a'));
+  else if(e.k==='whammy')withP(p,()=>msg('DESTRAVOU!','#2fd35a'));
+}
+// dificuldade maior e notas em dobro mudam as notas que ainda vão chegar (fora da tela)
+function reshapeNotes(p,e,t){
+  const a=t+p.D.win+.15,b=a+e.left,inW=n=>n.time>=a&&n.time<b&&!n.hit&&!n.missed;
+  const head=p.notes.slice(0,p.cursor);let tail=p.notes.slice(p.cursor);
+  if(e.k==='diffup'){
+    tail=tail.filter(n=>{if(!inW(n))return true;if(n.star>=0)p.phrases[n.star].broken=true;return false;});
+    for(const n of p.alt||[])if(n.time>=a&&n.time<b)tail.push({lane:n.lane,time:n.time,len:n.len,endTime:n.endTime,star:-1});
+  }else{
+    const lanes=Math.max(2,p.D.lanes),byT=new Map();
+    for(const n of tail)if(inW(n)){const k=n.time.toFixed(3);byT.set(k,(byT.get(k)||[]).concat(n));}
+    for(const ns of byT.values()){if(ns.length!==1)continue;const n=ns[0],l2=n.lane+1<lanes?n.lane+1:n.lane-1;if(l2>=0)tail.push({lane:l2,time:n.time,len:n.len,endTime:n.endTime,star:-1});}
+  }
+  tail.sort((x,y)=>x.time-y.time||x.lane-y.lane);
+  p.notes=head.concat(tail);
+}
+// conta o tempo dos ataques só na vez de quem foi atacado
+function effectsTick(t,dt){
+  if(!myTurnAt(P,t))return;
+  for(const e of P.eff.slice()){
+    if(!e.on)effectStart(P,e,t);
+    e.left-=dt;
+    if(ATK[e.k].taps?e.need<=0||e.left<=0:e.left<=0)effectDone(P,e);
+  }
+}
+// corda quebrada: apertar a casa dela conserta; alavanca: nenhuma nota sai até destravar
+function duelPress(l){
+  const t=songT(),br=P.eff.find(e=>e.k==='string'&&e.on&&e.lane===l);
+  if(br&&myTurnAt(P,t)){br.need--;P.flash[l]=performance.now();pushText('CONSERTANDO '+Math.max(0,br.need));sfxTick();if(br.need<=0)effectDone(P,br);return true;}
+  return!!duelLock(P,t);
+}
+function netAtk(to,k,list){
+  const net=G.net;if(!G.online||!net)return;
+  const o={t:'atk',r:net.round,to:String(to),k};if(Array.isArray(list))o.l=list.slice(0,3);
+  if(net.host){const q=net.peers.get(o.to);if(q&&q.connected)netSendTo(q.conn,Object.assign(o,{from:'h'}));}
+  else netSend(o);
+}
+function netOnAtk(net,d,fromId){
+  if(d.r!==net.round||G.state!=='play'||!duelOn())return;
+  const me=G.players[0],k=String(d.k||'');if(!me)return;
+  if(k==='gift'){receiveGift(me,(Array.isArray(d.l)?d.l:[]).map(String));return;}
+  const e=net.inSong&&net.inSong.find(p=>p.id===fromId);
+  applyAttack(me,k,{id:fromId,name:e?e.name:'Alguém'});
+}
+function sfxAttack(){if(!AC)return;const t=AC.currentTime,g=env(t,.32,.4,buses.fx);const o=osc('sawtooth',1500,t,g,.42);o.frequency.exponentialRampToValueAtTime(160,t+.35);noise(t,'highpass',2600,.7,.22,.22,buses.fx);}
+function sfxHurt(){if(!AC)return;const t=AC.currentTime,g=env(t,.3,.3,buses.fx);const o=osc('square',140,t,g,.32);o.frequency.exponentialRampToValueAtTime(55,t+.28);noise(t,'lowpass',700,.8,.25,.3,buses.fx);}
+function sfxSnap(){if(!AC)return;const t=AC.currentTime,g=env(t,.4,.5,buses.fx,.002);const o=osc('triangle',900,t,g,.52);o.frequency.exponentialRampToValueAtTime(70,t+.45);noise(t,'bandpass',3200,2,.06,.4,buses.fx);}
+function sfxTick(){if(!AC)return;const t=AC.currentTime;noise(t,'bandpass',2200,3,.04,.35,buses.fx);}
+function drawAtkSlots(bx,by,bw){
+  const h=13;c.save();c.textAlign='center';c.font='700 9px "Chakra Petch",sans-serif';
+  for(let i=0;i<3;i++){
+    const k=P.atk[i],y=by+i*(h+3);
+    c.fillStyle=k?hexA(ATK[k].col,i===0?.92:.5):'rgba(6,4,8,.7)';c.strokeStyle=k?ATK[k].col:'rgba(200,195,210,.35)';c.lineWidth=1;
+    c.beginPath();c.roundRect?c.roundRect(bx,y,bw,h,4):c.rect(bx,y,bw,h);c.fill();c.stroke();
+    if(k){c.fillStyle='#16100f';c.fillText(ATK[k].tag,bx+bw/2,y+h-3.5,bw-4);}
+  }
+  c.restore();
+}
+function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0,atk:[],eff:[],alt:null,flipOn:false,ovOn:false};}
 function songT(){
   if(G.song&&G.song.yt){if(!G.ytGo){const r=(G.ytStartAt-performance.now())/1000;return(r>60?-99:-r)-G.offset/1000;}return ytNow()-G.offset/1000;}
   return AC.currentTime-G.startTime-(G.lat||0)-G.offset/1000;
@@ -945,8 +1083,12 @@ async function startGame(startAt){
         if(!ch)pl.part='guitar';
       }
     }
-    if(!ch)ch=cc?chartForPlay(cc.diffs,cc.sp,pl.diff,0):custom?buildCustomChart(cur.an,pl.diff):buildChart(G.song,pl.diff);
-    pl.notes=ch.notes;pl.phrases=ch.phrases;if(G.bt&&G.bt.cuts)battleSplit(pl);G.players.push(pl);
+    const mk=dk=>cc?chartForPlay(cc.diffs,cc.sp,dk,0):custom?buildCustomChart(cur.an,dk):buildChart(G.song,dk);
+    if(!ch)ch=mk(pl.diff);
+    pl.notes=ch.notes;pl.phrases=ch.phrases;if(G.bt&&G.bt.cuts)battleSplit(pl);
+    // duelo: notas da dificuldade de cima, para o ataque "dificuldade maior"
+    const nd=duelOn()&&nextDiff(pl.diff);if(nd){const c2=mk(nd);if(!c2.used||c2.used!==ch.used)pl.alt=c2.notes.filter(n=>turnOwner(n.time)===pl.slot);}
+    G.players.push(pl);
   }
   Object.assign(G,{state:'play',paused:false,sched:0});
   layoutPlayers();
@@ -980,7 +1122,9 @@ async function startYT(startAt,NP){
   G.players=[];
   battleSetup(NP,()=>buildYTChart(ch,'expert').notes);
   for(let i=0;i<NP;i++){const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');const c2=buildYTChart(ch,pl.diff);pl.notes=c2.notes;pl.phrases=c2.phrases;
-    if(G.bt){pl.slot=G.bt.mine[i];if(G.bt.parts)pl.part='guitar';if(G.bt.cuts)battleSplit(pl);}G.players.push(pl);}
+    if(G.bt){pl.slot=G.bt.mine[i];if(G.bt.parts)pl.part='guitar';if(G.bt.cuts)battleSplit(pl);}
+    const nd=duelOn()&&nextDiff(pl.diff);if(nd){const c3=buildYTChart(ch,nd);if(!c3.used||c3.used!==c2.used)pl.alt=c3.notes.filter(n=>turnOwner(n.time)===pl.slot);}
+    G.players.push(pl);}
   Object.assign(G,{state:'play',paused:false,sched:0,ytGo:false,ytSeek:0,ytStartAt:performance.now()+1e9});
   layoutPlayers();
   master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(0,AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime+.3);
@@ -1059,7 +1203,7 @@ function hitNote(n,t){
   const err=Math.abs(n.time-t);
   pushText(err<.035?'PERFEITO':err<.07?'ÓTIMO':'BOM');
   if(n.len>0){n.holding=true;n.susT=n.time;P.holds.push(n);}
-  if(n.star>=0){const ph=P.phrases[n.star];ph.hit++;if(ph.hit===ph.total&&!ph.broken){P.energy=Math.min(1,P.energy+.25);msg('FRASE ESTELAR!','#9feeff');sfxThunder();G.flashAt=performance.now()/1000;}}
+  if(n.star>=0){const ph=P.phrases[n.star];ph.hit++;if(ph.hit===ph.total&&!ph.broken){if(duelOn())gainAttack(t);else{P.energy=Math.min(1,P.energy+.25);msg('FRASE ESTELAR!','#9feeff');}sfxThunder();G.flashAt=performance.now()/1000;}}
   if(P.combo>0&&P.combo%50===0)msg(P.combo+' NOTAS SEGUIDAS!','#ffd23b');
   if(P.combo===10||P.combo===20||P.combo===30)pushText('×'+multBase(),true);
 }
@@ -1081,7 +1225,8 @@ function tapHit(lane){
   overhit();
 }
 function strum(){
-  const t=songT(),W=P.D.hit;let t0=null;const grp=[];
+  const t=songT(),W=P.D.hit;
+  if(P.eff.length&&duelOn()&&duelLock(P,t))return;let t0=null;const grp=[];
   for(let i=P.cursor;i<P.notes.length;i++){
     const n=P.notes[i];if(n.time>t+W)break;
     if(n.hit||n.missed)continue;
@@ -1094,13 +1239,14 @@ function strum(){
   else ok=P.held.every((h,i)=>!!h===lanes.includes(i));
   if(ok)grp.forEach(n=>hitNote(n,t));else overhit();
 }
-function press(l){if(P.out||P.held[l])return;P.held[l]=1;if(P.mode==='tap'||P.touch)tapHit(l);}
+function press(l){if(P.out||P.held[l])return;if(P.eff.length&&duelOn()&&duelPress(l))return;P.held[l]=1;if(P.mode==='tap'||P.touch)tapHit(l);}
 function release(l){P.held[l]=0;}
-function activateSP(){if(G.state!=='play'||G.paused||P.out||P.spActive||P.energy<.5)return;P.spActive=true;sfxStar();msg('PODER ESTELAR!','#9feeff');}
+function activateSP(){if(G.state!=='play'||G.paused||P.out)return;if(duelOn()){duelKey();return;}if(P.spActive||P.energy<.5)return;P.spActive=true;sfxStar();msg('PODER ESTELAR!','#9feeff');}
 
 function updatePlayer(t){
   const dt=Math.max(0,t-P.lastT);P.lastT=t;
   if(P.out)return;
+  if(P.eff.length&&duelOn())effectsTick(t,dt);
   const W=P.D.hit;
   while(P.cursor<P.notes.length){
     const n=P.notes[P.cursor];
@@ -1139,7 +1285,7 @@ function fail(){G.state='fail';netSendEnd(false,false);if(G.song.yt&&YTP.player)
 function finish(){G.state='done';netSendEnd(true,false);sfxCrowd(AC.currentTime,3.5,.55);results(true);}
 
 // ---------- efeitos ----------
-function laneX(l,p){return P.CX+(l-2)*P.laneW*p;}
+function laneX(l,p){return P.CX+(P.flipOn?2-l:l-2)*P.laneW*p;}
 function burst(l,color,n){const x=laneX(l,1);for(let i=0;i<n;i++){const a=-Math.PI/2+(Math.random()-.5)*2.2,s=120+Math.random()*320;P.fx.push({x,y:hitY,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.45+Math.random()*.25,age:0,c:color,r:2+Math.random()*3});}}
 function spark(l){const x=laneX(l,1)+(Math.random()-.5)*P.laneW*.4;P.fx.push({x,y:hitY,vx:(Math.random()-.5)*80,vy:-120-Math.random()*200,life:.3,age:0,c:P.spActive?'#bff5ff':'#ffe6a8',r:1.5+Math.random()*1.5});}
 function pushText(s,big){P.texts.push({s,t:performance.now(),big:!!big});if(P.texts.length>3)P.texts.shift();}
@@ -1477,6 +1623,7 @@ function drawGem(n,t){
   const phraseOk=n.star>=0&&!P.phrases[n.star].broken;
   const dim=n.missed||n.ghost,col=dim?'#5a4f52':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
   c.globalAlpha=n.ghost?.32:n.missed?.55:1;
+  if(P.ovOn&&!n.ghost)c.globalAlpha*=.12+.88*Math.abs(Math.sin(performance.now()/85+n.time*7.3));
   c.fillStyle='rgba(0,0,0,.55)';ell(x,y+ry*.35,r*1.04,ry*1.04);
   if(phraseOk&&!n.missed){
     c.shadowColor='#bff5ff';c.shadowBlur=18*p;c.fillStyle='#eafcff';starPath(x,y,r*1.15,.62);c.fill();c.shadowBlur=0;
@@ -1508,6 +1655,14 @@ function drawFrets(now){
     c.fillStyle='rgba(255,255,255,.35)';ell(x-r*.35,hitY+pr-ry*.45,r*.26,ry*.12);
     if(fl>0){c.globalCompositeOperation='lighter';const gr=c.createRadialGradient(x,hitY-r*.6,0,x,hitY-r*.6,r*2.4);gr.addColorStop(0,`rgba(255,240,200,${.9*fl})`);gr.addColorStop(.4,hexA(P.spActive?'#7fe9ff':col,.6*fl));gr.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=gr;c.beginPath();c.ellipse(x,hitY-r*.6,r*1.6,r*2.4*(.6+.4*fl),0,0,Math.PI*2);c.fill();c.globalCompositeOperation='source-over';}
     if(!P.touch&&W>=600){c.fillStyle='rgba(247,236,223,.55)';c.font='600 13px "Chakra Petch",sans-serif';c.textAlign='center';c.fillText(labels[l],x,hitY+ry+20);}
+  }
+  // duelo: corda quebrada fica com um X vermelho e quantas vezes falta apertar
+  const br=duelOn()&&!P.out&&P.eff.find(e=>e.k==='string'&&e.on&&e.lane>=0);
+  if(br&&G.state==='play'&&myTurnAt(P,songT())){
+    const x=laneX(br.lane,1),r=P.laneW*.4,ry=r*.6,pulse=.6+.4*Math.abs(Math.sin(now/160));
+    c.strokeStyle=`rgba(229,56,59,${pulse})`;c.lineWidth=Math.max(3,r*.16);c.lineCap='round';
+    c.beginPath();c.moveTo(x-r*.55,hitY-ry*.55);c.lineTo(x+r*.55,hitY+ry*.55);c.moveTo(x+r*.55,hitY-ry*.55);c.lineTo(x-r*.55,hitY+ry*.55);c.stroke();c.lineCap='butt';
+    c.fillStyle='#ff8f8f';c.font=`700 ${Math.max(13,r*.55)|0}px "Chakra Petch",sans-serif`;c.textAlign='center';c.fillText('APERTE ×'+br.need,x,hitY-r*1.15);
   }
 }
 function drawFx(dt){
@@ -1602,15 +1757,25 @@ function drawHUD(now,t){
   const m=mult(),mc=P.spActive?'#7fe9ff':['#e8ddd0','#ff8a1f','#2fd35a','#b56bff'][multBase()-1];
   drawMultDial(mx,my,mr,m,mc,now);
   drawRockMeter(gx,gy,gr,now);
-  const ready=P.energy>=.5&&!P.spActive&&!P.out;
-  drawSPTube(bx,by,bw,ready,now);
-  const spKey=bindLabel(two&&P.i?BINDS.sp2:BINDS.sp1).toUpperCase();
-  c.font='600 10px "Chakra Petch",sans-serif';c.fillStyle='rgba(247,236,223,.65)';c.fillText(P.spActive?'PODER ESTELAR ATIVO':ready?(P.touch?'TOQUE NA ★':'APERTE '+spKey):'PODER ESTELAR',gx,by+26);
+  const duel=duelOn(),spKey=bindLabel(two&&P.i?BINDS.sp2:BINDS.sp1).toUpperCase(),lock=duel&&!P.out&&G.state==='play'?duelLock(P,t):null;
+  const ready=duel?!P.out&&(P.atk.length>0||!!lock):P.energy>=.5&&!P.spActive&&!P.out;
+  c.font='600 10px "Chakra Petch",sans-serif';c.fillStyle='rgba(247,236,223,.65)';
+  if(duel){drawAtkSlots(bx,by,bw);c.fillText(P.out?'':lock?(P.touch?'TOQUE NA ★':'APERTE '+spKey):P.atk.length?(P.touch?'TOQUE NA ★':'ATACAR: '+spKey):'ATAQUES',gx,by+58);}
+  else{drawSPTube(bx,by,bw,ready,now);c.fillText(P.spActive?'PODER ESTELAR ATIVO':ready?(P.touch?'TOQUE NA ★':'APERTE '+spKey):'PODER ESTELAR',gx,by+26);}
   const sb=spBtns[P.i];sb.hidden=!(P.touch&&ready&&G.state==='play'&&!G.paused);
-  if(!sb.hidden){sb.style.left=Math.max(4,Math.min(W-52,gx-24))+'px';sb.style.top=(by+(wide?34:32))+'px';}
+  if(!sb.hidden){sb.style.left=Math.max(4,Math.min(W-52,gx-24))+'px';sb.style.top=(by+(duel?66:wide?34:32))+'px';}
   for(const x of P.texts){const age=(now-x.t)/600;if(age>1)continue;c.globalAlpha=1-age;c.fillStyle=x.big?'#ffd23b':'#fff';c.font=`700 ${x.big?30:Math.max(14,laneW*.3)}px "Chakra Petch",sans-serif`;c.fillText(x.s,CX,hitY-laneW*1.4-age*30-(x.big?40:0));}
-  for(const x of P.msgs){const age=(now-x.t)/1400;if(age>1)continue;c.globalAlpha=Math.min(1,(1-age)*2.5);const s=1+(1-Math.min(1,age*6))*.4;c.save();c.translate(CX,H*(narrow||two?.42:.32));c.scale(s,s);c.fillStyle=x.c;c.shadowColor=x.c;c.shadowBlur=20;c.font=`400 ${Math.min(56,(x1-x0)*.09)}px "Metal Mania",Impact,sans-serif`;c.fillText(x.s,0,0,(x1-x0)*.92);c.restore();}
+  const live=P.msgs.filter(x=>now-x.t<1400),mfs=Math.min(56,(x1-x0)*.09);
+  live.forEach((x,i)=>{const age=(now-x.t)/1400;c.globalAlpha=Math.min(1,(1-age)*2.5);const s=1+(1-Math.min(1,age*6))*.4;c.save();c.translate(CX,H*(narrow||two?.42:.32)-(live.length-1-i)*mfs*1.15);c.scale(s,s);c.fillStyle=x.c;c.shadowColor=x.c;c.shadowBlur=20;c.font=`400 ${mfs}px "Metal Mania",Impact,sans-serif`;c.fillText(x.s,0,0,(x1-x0)*.92);c.restore();});
   c.globalAlpha=1;
+  // duelo: ataques valendo (no alto da pista) e a alavanca travada
+  if(duel&&!P.out&&P.eff.length&&G.state==='play'){
+    const mt=myTurnAt(P,t),act=P.eff.filter(e=>e.on&&mt),yF=yAt(pz(ZMAX));
+    c.textAlign='center';c.font='700 13px "Chakra Petch",sans-serif';
+    if(act.length){c.fillStyle='#ff8f8f';c.fillText(act.map(e=>ATK[e.k].tag+(ATK[e.k].taps?'':' '+Math.max(0,Math.ceil(e.left))+'S')).join(' · '),CX,yF-12,boardW);}
+    else{c.fillStyle='rgba(255,210,59,.85)';c.fillText('NA SUA VEZ: '+P.eff.map(e=>ATK[e.k].tag).join(' · '),CX,yF-12,boardW);}
+    if(lock){c.fillStyle='#ffd23b';c.shadowColor='#ffd23b';c.shadowBlur=14;c.font=`400 ${Math.min(34,boardW*.1)|0}px "Metal Mania",Impact,sans-serif`;c.fillText(`TRAVADO! ${P.touch?'TOQUE NA ★':'APERTE '+spKey} ×${lock.need}`,CX,hitY-laneW*2.3,boardW*.95);c.shadowBlur=0;}
+  }
   // duelo: avisa de quem é a vez e escurece a pista de quem está esperando
   if(G.bt&&G.bt.cuts&&!P.out){
     const k=turnIndex(t+1.2),o=k%G.bt.n,mine=o===P.slot;
@@ -1652,6 +1817,10 @@ function frame(){
     if(G.players.length>1){c.strokeStyle='rgba(255,220,190,.12)';c.lineWidth=1;c.beginPath();c.moveTo(W/2,0);c.lineTo(W/2,H);c.stroke();}
     for(const p of G.players){
       P=p;
+      // duelo: canhoto espelha a pista, amplificador estourado faz tremer
+      const dv=duelOn()&&G.state==='play'&&!P.out&&P.eff.length>0;
+      P.flipOn=dv&&duelVis(P,'lefty',t);P.ovOn=dv&&duelVis(P,'overload',t);
+      if(P.ovOn){c.save();c.translate(Math.sin(now/37)*5+Math.sin(now/13)*2,Math.cos(now/29)*3);}
       drawHighway(t);
       const end=t+P.D.win+.1;let i=Math.max(0,P.cursor-30),j=i;
       while(j<P.notes.length&&P.notes[j].time<end)j++;
@@ -1662,6 +1831,7 @@ function frame(){
       drawFrets(now);
       for(let k=gj-1;k>=gi;k--)drawGem(P.ghost[k],t);
       for(let k=j-1;k>=i;k--){const n=P.notes[k];if(!n.hit)drawGem(n,t);}
+      if(P.ovOn)c.restore();
       drawFx(dt);drawHUD(now,t);
     }
   }
@@ -2050,6 +2220,7 @@ function netHostData(net,pl,d){
     case'pong':{const now=performance.now(),rtt=now-num(d.a);if(rtt>=0&&rtt<5000){pl.rtt=pl.rtt==null?rtt:pl.rtt*.7+rtt*.3;}break;}
     case'have':pl.have={key:String(d.key||'').slice(0,400),ok:!!d.ok,why:String(d.why||'').slice(0,10)};if(menuOpen())buildMenu();if(!$('results').hidden)renderOnlineResults();break;
     case'st':if(pl.hello&&d.r===net.round)net.live[pl.id]=cleanSt(d);break;
+    case'atk':{if(!pl.hello)break;const to=String(d.to||'').slice(0,8);if(to==='h')netOnAtk(net,d,pl.id);else{const q=net.peers.get(to);if(q&&q.connected)netSendTo(q.conn,{t:'atk',r:d.r,to,k:String(d.k||'').slice(0,10),l:Array.isArray(d.l)?d.l.slice(0,3):undefined,from:pl.id});}break;}
     case'end':{if(!pl.hello||d.r!==net.round)break;const e=cleanEnd(d);net.ends[pl.id]=e;netSend(Object.assign({t:'end',id:pl.id,r:net.round},e),pl.id);if(!$('results').hidden)renderOnlineResults();if(menuOpen())buildMenu();break;}
   }
 }
@@ -2057,6 +2228,7 @@ function netGuestData(net,d){
   if(!d||typeof d!=='object')return;
   switch(d.t){
     case'welcome':net.myId=String(d.id).slice(0,8);break;
+    case'atk':if(String(d.to)===net.myId)netOnAtk(net,d,String(d.from||'').slice(0,8));break;
     case'roster':net.roster=cleanPlayers(d.players);if(menuOpen())buildMenu();if(!$('results').hidden)renderOnlineResults();break;
     case'full':netReset();netStatus('Essa sala já está cheia (8 jogadores).',true);buildMenu();break;
     case'closed':netGuestLost(net);break;
