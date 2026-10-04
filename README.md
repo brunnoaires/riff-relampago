@@ -7,6 +7,7 @@ Jogo de ritmo no navegador, no estilo Guitar Hero, para jogar sozinho, em dupla 
 - Duelo online: um cria a sala e manda o código ou o link, o outro entra de outro computador. A conexão é direta entre os dois navegadores (WebRTC com [PeerJS](https://peerjs.com)).
 - Grave o chart de uma música do YouTube tocando junto com o vídeo, e compartilhe o chart com amigos por um código.
 - Ou crie o chart de uma música do YouTube automaticamente a partir do seu próprio MP3 dela: o jogo analisa o arquivo e você marca quando a música começa no vídeo para sincronizar.
+- Importe charts feitos à mão (notes.chart ou notes.mid do Moonscraper / Clone Hero), com as 4 dificuldades e o Poder Estelar do chart, tocando com o áudio da música (stems como guitar.ogg incluídos) ou com um vídeo do YouTube.
 
 Tudo roda no navegador, em `index.html` mais a biblioteca PeerJS em `vendor/` (licença MIT, em `vendor/PEERJS-LICENSE`). Nenhuma música com direitos autorais vem junto com o jogo.
 
