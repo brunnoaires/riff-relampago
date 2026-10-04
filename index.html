@@ -613,6 +613,7 @@ function ytFailed(code){
   if(!(G.song&&G.song.yt)&&G.state!=='record')return;
   if(G.state==='record'&&G.rec&&G.rec.sync){saveRecording(false);return;}
   if(G.state==='record'&&G.rec&&G.rec.notes.length>=5){saveRecording(false);menuNote('O vídeo parou com erro, mas salvei as notas gravadas até ali.',true);return;}
+  if(G.online&&G.state==='play')netSendEnd(false,true);
   G.rec=null;toMenu();menuNote(ytErrText('yt'+code),true);
 }
 function ytErrText(m){return/yt(101|150)/.test(m)?'O dono desse vídeo não permite que ele toque fora do YouTube. Tente outro envio da mesma música (ao vivo, lyric video, cover).':/api/.test(m)?'Não consegui carregar o player do YouTube. Confira a internet e tente de novo.':'Não consegui abrir esse vídeo. Confira o link.';}
@@ -746,7 +747,7 @@ async function startYT(startAt,NP){
   master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(0,AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime+.3);
   show(null);$('yt').hidden=false;pauseBtn.hidden=false;$('tapStart').hidden=true;
   const token=G.ytToken=Math.random();
-  try{await ytPrepare(ch.videoId);}catch(e){if(G.ytToken===token){toMenu();menuNote(ytErrText(e.message),true);}return;}
+  try{await ytPrepare(ch.videoId);}catch(e){if(G.ytToken===token){if(G.online)netSendEnd(false,true);toMenu();menuNote(ytErrText(e.message),true);}return;}
   if(G.ytToken!==token||G.state!=='play')return;
   YTP.player.setPlaybackRate(1);YTP.player.setVolume(100);
   if(startAt){const late=(performance.now()-startAt)/1000;if(late>0){G.ytSeek=late;G.ytStartAt=performance.now();}else G.ytStartAt=startAt;}
@@ -1236,7 +1237,7 @@ $('saveRecBtn').onclick=()=>{AC.resume();saveRecording(false);};
 const toMenu=()=>{stopSource();G.ytToken=0;if(YTP.player&&YTP.player.pauseVideo){try{YTP.player.pauseVideo();}catch(e){}}$('yt').hidden=true;$('tapStart').hidden=true;G.rec=null;G.state='menu';G.song=null;G.players=[];buildMenu();show('menu');};
 $('quitBtn').onclick=()=>{AC.resume();if(G.online&&G.state==='play')netSendEnd(false,true);if(G.song&&!G.song.yt)endAudio(.05);toMenu();};
 $('tapStart').onclick=()=>{$('tapStart').hidden=true;if(G.paused||!G.ytGo||(G.state!=='play'&&G.state!=='record')||!YTP.player)return;try{YTP.player.mute();YTP.mutedStart=true;}catch(e){}YTP.player.playVideo();G.ytWatch=performance.now();};
-$('againBtn').onclick=()=>{if(G.online&&G.net&&G.net.connected){if(G.net.host)netHostStart();return;}startGame();};
+$('againBtn').onclick=()=>{if(G.online&&G.net&&G.net.connected){if(G.net.host)netHostStart();return;}if(G.net){G.net.inSong=[{id:'h',name:myName(),diff:G.diffs[0]}];G.net.ends={};G.net.live={};}startGame();};
 $('menuBtn').onclick=toMenu;
 
 function results(ok){
@@ -1244,8 +1245,8 @@ function results(ok){
   if(G.song.yt&&YTP.player&&ok)setTimeout(()=>{try{YTP.player.pauseVideo();}catch(e){}},1500);
   const body=$('resBody');$('againBtn').disabled=false;
   if(G.online&&G.net&&G.players.length===1){
-    G.myEnd={ok};
-    setTimeout(()=>{G.resultsAt=performance.now();renderOnlineResults();show('results');$('againBtn').focus();},ok?900:1200);
+    G.myEnd={ok};const me=G.players[0];
+    setTimeout(()=>{if(G.players[0]!==me||(G.state!=='done'&&G.state!=='fail'))return;G.resultsAt=performance.now();renderOnlineResults();show('results');$('againBtn').focus();},ok?900:1200);
     return;
   }
   if(G.players.length===1){
@@ -1283,18 +1284,18 @@ function renderOnlineResults(){
   });
   const waiting=rows.filter(r=>r.status===-1).length;
   rows.sort((a,b)=>(a.status===2)-(b.status===2)||(a.status===1)-(b.status===1)||b.s-a.s);
-  const mi=rows.findIndex(r=>r.mine),tie=rows.length>1&&rows[0].s===rows[1].s&&rows[0].status===rows[1].status;
+  const mi=rows.findIndex(r=>r.mine),tie=mi>=0&&rows.length>1&&rows.filter(r=>r.s===rows[0].s&&r.status===rows[0].status).length>1&&rows[mi].s===rows[0].s&&rows[mi].status===rows[0].status;
   $('resEyebrow').textContent=`${name} · sala online`;
-  $('resTitle').textContent=waiting?`Esperando ${waiting===1?'1 jogador':waiting+' jogadores'} terminar…`:rows.length<2?'Você terminou':mi===0?(tie?'Empate no topo!':'Você venceu!'):`Você ficou em ${mi+1}º lugar`;
+  $('resTitle').textContent=waiting?`Esperando ${waiting===1?'1 jogador':waiting+' jogadores'} terminar…`:rows.length<2?'Você terminou':tie?'Empate no topo!':mi===0?'Você venceu!':`Você ficou em ${mi+1}º lugar`;
   $('resBody').innerHTML=`<ol class="rank">${rows.map((r,i)=>`<li class="${r.mine?'me':''}${i===0&&!waiting&&rows.length>1?' win':''}"><span class="pos">${i+1}º</span><span class="who"><b>${escH(r.name)}</b>${r.diff?` · ${escH(r.diff)}`:''}<small>${r.ln}</small></span><span class="sc">${(+r.s||0).toLocaleString('pt-BR')}</span></li>`).join('')}</ol>`;
   const ab=$('againBtn'),on=G.net&&G.net.connected;
-  if(on){const hn=netHostName(G.net);ab.textContent=!G.net.host?'Esperando '+hn+' começar':waiting?'Esperando todos terminarem':'Jogar de novo com a sala';ab.disabled=!G.net.host||!!waiting;}
+  if(on){const hn=netHostName(G.net),need=songDesc(),miss=G.net.host&&need.kind==='lib'&&(!curCustom()||!netAllHave(G.net,need));ab.textContent=!G.net.host?'Esperando '+hn+' começar':waiting?'Esperando todos terminarem':miss?'Alguém ainda não tem esse chart':'Jogar de novo com a sala';ab.disabled=!G.net.host||!!waiting||miss;}
   else{ab.textContent='Tocar sozinho';ab.disabled=false;}
 }
 
 // ---------- online: salas com até 8 jogadores ----------
 // O criador da sala é o centro: recebe tudo de cada amigo e repassa para os outros.
-const NET_PREFIX='riffrelampago-v1-',NET_MAX=8;
+const NET_PREFIX='riffrelampago-v2-',NET_MAX=8;
 const escH=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const num=v=>Number.isFinite(+v)?+v:0;
 const cleanName=v=>String(v==null?'':v).replace(/[\u0000-\u001f]/g,'').trim().slice(0,20)||'Jogador';
@@ -1331,8 +1332,7 @@ function netCreate(tries){
   peer.on('open',()=>{if(G.net!==net)return;net.open=true;buildMenu();});
   peer.on('connection',conn=>{
     if(G.net!==net)return;
-    const n=[...net.peers.values()].filter(p=>p.connected).length;
-    if(n>=NET_MAX-1){conn.on('open',()=>{netSendTo(conn,{t:'full'});setTimeout(()=>{try{conn.close();}catch(e){}},800);});return;}
+    if(net.peers.size>=NET_MAX-1){conn.on('open',()=>{netSendTo(conn,{t:'full'});setTimeout(()=>{try{conn.close();}catch(e){}},800);});return;}
     netHostAttach(net,conn);
   });
   peer.on('error',err=>netError(net,err));
@@ -1429,9 +1429,9 @@ function netHostData(net,pl,d){
     case'diff':pl.diff=DIFFS[d.diff]?d.diff:null;netRoster(net);if(menuOpen())buildMenu();break;
     case'ping':netSendTo(pl.conn,{t:'pong',a:d.a,b:performance.now()});break;
     case'pong':{const now=performance.now(),rtt=now-num(d.a);if(rtt>=0&&rtt<5000){pl.rtt=pl.rtt==null?rtt:pl.rtt*.7+rtt*.3;}break;}
-    case'have':pl.have={key:String(d.key||'').slice(0,40),ok:!!d.ok,why:String(d.why||'').slice(0,10)};if(menuOpen())buildMenu();break;
-    case'st':if(pl.hello)net.live[pl.id]=cleanSt(d);break;
-    case'end':{if(!pl.hello)break;const e=cleanEnd(d);net.ends[pl.id]=e;netSend(Object.assign({t:'end',id:pl.id},e),pl.id);if(!$('results').hidden)renderOnlineResults();break;}
+    case'have':pl.have={key:String(d.key||'').slice(0,40),ok:!!d.ok,why:String(d.why||'').slice(0,10)};if(menuOpen())buildMenu();if(!$('results').hidden)renderOnlineResults();break;
+    case'st':if(pl.hello&&d.r===net.round)net.live[pl.id]=cleanSt(d);break;
+    case'end':{if(!pl.hello||d.r!==net.round)break;const e=cleanEnd(d);net.ends[pl.id]=e;netSend(Object.assign({t:'end',id:pl.id,r:net.round},e),pl.id);if(!$('results').hidden)renderOnlineResults();if(menuOpen())buildMenu();break;}
   }
 }
 function netGuestData(net,d){
@@ -1450,11 +1450,13 @@ function netGuestData(net,d){
     }
     case'lobby':net.hostSong=d.song&&typeof d.song==='object'?d.song:null;netLibHave();if(menuOpen())buildMenu();break;
     case'start':
-      if(G.state==='play'||G.state==='record')break;
+      net.round=num(d.r);
+      // ainda tocando a rodada anterior ou gravando: avisa que fica de fora desta
+      if(G.state==='play'||G.state==='record'){netSend({t:'end',r:net.round,ok:false,quit:true,s:0,h:0,n:0,mc:0,out:false,diff:G.diffs[0]});break;}
       net.inSong=cleanPlayers(d.players);net.ends={};net.live={};
       show(null);netStartLocal(d.song,num(d.at)-net.offset);break;
-    case'sts':if(d.l&&typeof d.l==='object'){const o={};for(const k of Object.keys(d.l).slice(0,NET_MAX))o[k.slice(0,8)]=cleanSt(d.l[k]);net.live=o;}break;
-    case'end':{const id=String(d.id).slice(0,8);if(id===net.myId)break;net.ends[id]=cleanEnd(d);if(!$('results').hidden)renderOnlineResults();break;}
+    case'sts':if(d.r===net.round&&d.l&&typeof d.l==='object'){const o={};for(const k of Object.keys(d.l).slice(0,NET_MAX))o[k.slice(0,8)]=cleanSt(d.l[k]);net.live=o;}break;
+    case'end':{const id=String(d.id).slice(0,8);if(id===net.myId||d.r!==net.round)break;net.ends[id]=cleanEnd(d);if(!$('results').hidden)renderOnlineResults();break;}
     case'left':if(G.state==='play'&&net.inSong&&G.players[0]){const p=net.inSong.find(x=>x.id===String(d.id));if(p){P=G.players[0];msg(p.name.toUpperCase()+' SAIU','#e5383b');}}break;
   }
 }
@@ -1498,34 +1500,37 @@ function netAllHave(net,d){
   return[...net.peers.values()].filter(p=>p.connected&&p.hello).every(p=>p.have&&p.have.key===key&&p.have.ok);
 }
 function netHostStart(){
-  const net=G.net;if(!net||!net.host||!net.connected||G.state==='play')return;
+  const net=G.net;if(!net||!net.host||!net.connected||G.state==='play'||netGuestsPlaying(net))return;
   const d=songDesc();if(d.kind==='file')return;
   if(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d)))return;
   const at=performance.now()+(d.kind==='yt'?5000:3000);
+  net.round=(net.round|0)+1;
   net.inSong=net.roster.map(p=>({id:p.id,name:p.name,diff:p.diff}));net.ends={};net.live={};
-  netSend({t:'start',song:d,at,players:net.inSong});
+  netSend({t:'start',song:d,at,players:net.inSong,r:net.round});
   netStartLocal(d,at);
 }
 function netStartLocal(d,atLocal){
   const def=descToDef(d);
-  const fail=t=>{toMenu();menuNote(t,true);};
+  const fail=t=>{G.players=[];netSendEnd(false,true);toMenu();menuNote(t,true);};
   if(!def){fail(d&&d.kind==='lib'?'Você não tem essa música na biblioteca. Importe o mesmo chart para jogar a próxima.':'Não consegui abrir a música escolhida.');return;}
   if(def.lib&&!(G.lib&&G.lib.id===def.meta.id)){fail('A música ainda não terminou de carregar aqui. Ela entra na próxima rodada.');return;}
   G.myEnd=null;$('againBtn').disabled=false;
   G.songDef=def;startGame(atLocal);
 }
 function netSendEnd(ok,quit){
-  const net=G.net;if(!G.online||!net||!G.players[0])return;
-  const p=G.players[0],e={ok,quit,s:p.score,h:p.hits,n:p.notes.length,mc:p.maxCombo,out:p.out,diff:p.diff};
-  if(net.host){net.ends.h=cleanEnd(e);netSend(Object.assign({t:'end',id:'h'},e));}
-  else netSend(Object.assign({t:'end'},e));
+  const net=G.net;if(!G.online||!net)return;
+  const p=G.players[0],e=p?{ok,quit,s:p.score,h:p.hits,n:p.notes.length,mc:p.maxCombo,out:p.out,diff:p.diff}:{ok:false,quit:true,s:0,h:0,n:0,mc:0,out:false,diff:G.diffs[0]};
+  if(net.host){net.ends.h=cleanEnd(e);netSend(Object.assign({t:'end',id:'h',r:net.round},e));}
+  else netSend(Object.assign({t:'end',r:net.round},e));
 }
+// alguém da rodada ainda está tocando (fora quem criou a sala)
+const netGuestsPlaying=net=>!!(net.inSong&&net.inSong.some(p=>p.id!=='h'&&!net.ends[p.id]&&netIsHere(net,p.id)));
 setInterval(()=>{
-  const net=G.net;if(!G.online||G.state!=='play'||!net||!net.connected)return;
-  const p=G.players[0];if(!p)return;P=p;
-  const st={s:p.score,c:p.combo,m:mult(),mt:+p.meter.toFixed(3),sp:p.spActive,o:p.out};
-  if(net.host){net.live.h=st;netSend({t:'sts',l:net.live});}
-  else netSend(Object.assign({t:'st'},st));
+  const net=G.net;if(!G.online||!net||!net.connected)return;
+  const p=G.state==='play'?G.players[0]:null;
+  const st=p?(P=p,{s:p.score,c:p.combo,m:mult(),mt:+p.meter.toFixed(3),sp:p.spActive,o:p.out}):null;
+  if(net.host){if(st)net.live.h=st;if(st||netGuestsPlaying(net))netSend({t:'sts',l:net.live,r:net.round});}
+  else if(st)netSend(Object.assign({t:'st',r:net.round},st));
 },120);
 // placar ao vivo de todos os jogadores da sala, no canto superior direito
 function drawBoard(){
@@ -1705,7 +1710,7 @@ function buildMenu(){
     const net=G.net;
     if(!net||!net.connected)pb.disabled=true;
     else if(!net.host){pb.disabled=true;pb.textContent='Esperando '+netHostName(net)+' começar';if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netSend({t:'diff',diff:G.diffs[0]});}}
-    else{const d=songDesc();if(d.kind==='file'||(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d))))pb.disabled=true;netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netRoster(net);}}
+    else{const d=songDesc();if(d.kind==='file'||(d.kind==='lib'&&(!curCustom()||!netAllHave(net,d))))pb.disabled=true;if(netGuestsPlaying(net)){pb.disabled=true;pb.textContent='Esperando todos terminarem';}netSendLobby();if(net.sentDiff!==G.diffs[0]){net.sentDiff=G.diffs[0];netRoster(net);}}
   }
   if(G.songDef.yt||(G.online&&G.net&&G.net.hostSong&&G.net.hostSong.kind==='yt'))loadYTApi().catch(()=>{});
 }
@@ -1826,7 +1831,7 @@ function parseSng(ab){
   return{meta,files:files.map(f=>({name:f.name,ab:async()=>{const out=new Uint8Array(f.size),src=u.subarray(f.off,f.off+f.size);for(let i=0;i<f.size;i++)out[i]=src[i]^mask[i&15]^(i&255);return out.buffer;}}))};
 }
 const isChartFile=n=>/\.(chart|mid|midi)$/i.test(n);
-const isStem=n=>/\.(ogg|opus|mp3|wav|m4a|flac|aac|webm)$/i.test(n)&&!/^(preview|crowd)\b/i.test(n);
+const isStem=n=>/\.(ogg|opus|mp3|wav|m4a|flac|aac|webm)$/i.test(n)&&!/^(preview|crowd|video|background)\b/i.test(n);
 function pickChart(names){return names.find(n=>/^notes\.chart$/i.test(n))||names.find(n=>/^notes\.midi?$/i.test(n))||names.find(n=>/\.chart$/i.test(n))||names.find(n=>/\.midi?$/i.test(n))||null;}
 async function chartFrom(name,ab){return/\.chart$/i.test(name)?parseChartText(new TextDecoder().decode(ab)):parseMidi(ab);}
 function applyDelay(chart,ms){const s=(+ms||0)/1000;if(!s)return chart;for(const k in chart.diffs)chart.diffs[k].forEach(n=>n.time=+(n.time+s).toFixed(3));for(const k in chart.sp)chart.sp[k].forEach(w=>{w[0]+=s;w[1]+=s;});chart.beats=chart.beats.map(b=>b+s);chart.last+=s;return chart;}
@@ -1873,7 +1878,8 @@ function sumInto(a,b){
   for(let c=0;c<ch;c++){const o=out.getChannelData(c),x=b.getChannelData(Math.min(c,b.numberOfChannels-1));for(let i=0;i<x.length;i++)o[i]+=x[i];}
   return out;
 }
-async function libLoad(m,gesture){
+async function libLoad(m,gesture,job){
+  const live=()=>{if(job&&LIB.loading!==job)throw new Error('cancel');};
   let data=LIB.mem&&LIB.mem[m.id];
   if(!data){try{data=await idbGet('data',m.id);}catch(e){data=null;}}
   if(!data)throw new Error('gone');
@@ -1887,27 +1893,28 @@ async function libLoad(m,gesture){
   }else files=data.stems.map(s=>({name:s.name,ab:()=>s.blob.arrayBuffer()}));
   let mix=null,gtr=null;
   for(const f of files.filter(f=>isStem(f.name))){
-    let buf;try{buf=await decodeAB(await f.ab());}catch(e){continue;}
+    live();let buf;try{buf=await decodeAB(await f.ab());}catch(e){continue;}
     if(/^guitar\b/i.test(f.name))gtr=gtr?sumInto(gtr,buf):buf;else mix=mix?sumInto(mix,buf):buf;
     await new Promise(r=>setTimeout(r,0));
   }
-  if(!mix&&!gtr)throw new Error('decode');
+  live();if(!mix&&!gtr)throw new Error('decode');
   const stems=[];if(mix)stems.push({buffer:mix,guitar:false});if(gtr)stems.push({buffer:gtr,guitar:true});
   return{id:m.id,name:m.name,chart:data.chart,stems,buffer:mix||gtr,dur:Math.max(...stems.map(s=>s.buffer.duration))};
 }
 function libErrText(e){const m=e&&e.message;return m==='perm'?'O navegador precisa da sua permissão para ler a pasta do Clone Hero. Toque na música e aceite.':m==='gone'?'Não achei os arquivos dessa música. Se ela veio da pasta do Clone Hero, procure músicas na pasta de novo.':m==='decode'?'Este navegador não conseguiu tocar o áudio dessa música. Tente o Chrome ou o Edge.':'Não consegui abrir essa música.';}
 function libEnsure(m,gesture,quiet){
-  if(G.lib&&G.lib.id===m.id)return Promise.resolve(G.lib);
+  if(G.lib&&G.lib.id===m.id){LIB.loading=null;return Promise.resolve(G.lib);}
   if(LIB.loading&&LIB.loading.id===m.id)return LIB.loading.p;
   if(LIB.err&&LIB.err.id===m.id)LIB.err=null;
-  const job={id:m.id};
-  job.p=libLoad(m,gesture).then(L=>{if(LIB.loading===job)G.lib=L;return L;},e=>{if(LIB.loading===job&&!(quiet&&e&&e.message==='perm'))LIB.err={id:m.id,msg:libErrText(e),perm:e&&e.message==='perm'};throw e;})
+  const job={id:m.id};LIB.loading=job;
+  job.p=libLoad(m,gesture,job).then(L=>{if(LIB.loading===job)G.lib=L;return L;},e=>{if(LIB.loading===job&&!(quiet&&e&&e.message==='perm'))LIB.err={id:m.id,msg:libErrText(e),perm:e&&e.message==='perm'};throw e;})
     .finally(()=>{if(LIB.loading===job)LIB.loading=null;if(G.state==='menu')buildMenu();netLibHave();});
-  LIB.loading=job;if(G.state==='menu'&&!$('menu').hidden)buildMenu();
+  if(G.state==='menu'&&!$('menu').hidden)buildMenu();
   return job.p;
 }
 async function libSave(meta,data){
   meta.src=data.src;data.id=meta.id;
+  if(LIB.loading&&LIB.loading.id===meta.id)LIB.loading=null;if(G.lib&&G.lib.id===meta.id)G.lib=null;
   try{await idbPutSong(meta,data);if(LIB.mem)delete LIB.mem[meta.id];if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});return true;}
   catch(e){(LIB.memMeta=LIB.memMeta||{})[meta.id]=meta;(LIB.mem=LIB.mem||{})[meta.id]=data;meta.unsaved=e&&e.name==='QuotaExceededError'?'quota':'save';return false;}
 }
@@ -1940,7 +1947,9 @@ async function importFolderFiles(files,dirInfo){
 function importDone(added,failed,firstErr){
   chartBusy=false;chartMsgT('');
   libRefresh().then(()=>{
+    if(G.songDef.lib&&!LIB.list.some(x=>x.id===G.songDef.meta.id)){if(G.lib&&G.lib.id===G.songDef.meta.id)G.lib=null;G.songDef=SONGS[0];savePrefs();if(G.state==='menu')buildMenu();}
     if(!added.length){chartErrT(chartErrText(firstErr));return;}
+    if(G.state!=='menu'||$('chartPanel').hidden)return;
     const one=added.length===1?added[0]:null;
     if(one){const m=LIB.list.find(x=>x.id===one.id)||one;libSelect(m);}else buildMenu();
     show('menu');
@@ -1972,30 +1981,32 @@ $('chartDirBtn').onclick=async()=>{
 $('chartRescanBtn').onclick=async()=>{if(chartBusy)return;chartErrT('');try{scanFolder(await libDir(true));}catch(e){chartErrT(libErrText(e));}};
 async function scanFolder(root){
   chartBusy=true;chartMsgT('Procurando músicas na pasta…');
-  const found=[];let dirs=0;
+  const found=[],bad=[];let dirs=0;
   async function walk(dir,path,depth){
-    const ents=[];try{for await(const e of dir.values())ents.push(e);}catch(e){return;}
+    const ents=[];try{for await(const e of dir.values())ents.push(e);}catch(e){if(!depth)throw e;bad.push(path.join('/'));return;}
     dirs++;if(dirs%20===0){chartMsgT(`Procurando músicas na pasta… ${found.length} encontradas`);await new Promise(r=>setTimeout(r,0));}
     const files=ents.filter(e=>e.kind==='file'),names=files.map(e=>e.name);
     if(pickChart(names)&&names.some(isStem))found.push({dir,path,files});
     for(const f of files)if(/\.sng$/i.test(f.name))found.push({dir,path,sng:f});
     if(depth<8)for(const e of ents)if(e.kind==='directory')await walk(e,path.concat(e.name),depth+1);
   }
-  await walk(root,[],0);
-  const known=new Map(LIB.list.filter(m=>m.src==='dir'||m.src==='dirsng').map(m=>[m.path,m])),seen=new Set(),added=[];let failed=0,firstErr=null,i=0;
+  try{await walk(root,[],0);}catch(e){chartBusy=false;chartMsgT('');chartErrT('Não consegui abrir a pasta de músicas. Se ela mudou de lugar ou o disco foi desconectado, escolha a pasta de novo.');return;}
+  const known=new Map(LIB.list.filter(m=>m.src==='dir'||m.src==='dirsng').map(m=>[m.path,m])),keep=new Set(),added=[];let failed=0,firstErr=null,i=0;
   for(const s of found){
     i++;if(i%3===0)chartMsgT(`Lendo as músicas… ${i} de ${found.length}`);
-    const key=s.path.concat(s.sng?[s.sng.name]:[]).join('/');seen.add(key);
+    const key=s.path.concat(s.sng?[s.sng.name]:[]).join('/');
     try{
       const files=s.sng?[await s.sng.getFile()]:await Promise.all(s.files.map(f=>f.getFile()));
       const mod=Math.max(...files.filter(f=>isChartFile(f.name)||/\.sng$|^song\.ini$/i.test(f.name)).map(f=>f.lastModified||0));
-      const k=known.get(key);if(k&&k.mod===mod){added.push(k);continue;}
+      const k=known.get(key);if(k&&k.mod===mod){keep.add(k.id);added.push(k);continue;}
       const meta=s.sng?await importSngFile(files[0],{path:s.path,key}):await importFolderFiles(files,{path:s.path,key});
       meta.mod=mod;try{await idbTx('meta','readwrite',tx=>tx.objectStore('meta').put(meta));}catch(e){}
-      added.push(meta);
-    }catch(e){failed++;firstErr=firstErr||e;}
+      keep.add(meta.id);added.push(meta);
+    }catch(e){failed++;firstErr=firstErr||e;const k=known.get(key);if(k)keep.add(k.id);}
   }
-  for(const [key,m]of known)if(!seen.has(key)){try{await idbDelSong(m.id);}catch(e){}}
+  // tira da biblioteca o que sumiu da pasta (ou a versão antiga de um chart editado), menos o que não deu para ler agora
+  const under=p=>bad.some(b=>p===b||p.startsWith(b+'/'));
+  for(const m of LIB.list)if((m.src==='dir'||m.src==='dirsng')&&!keep.has(m.id)&&!under(m.path||"")){try{await idbDelSong(m.id);}catch(e){}}
   importDone(added,failed,firstErr||new Error('nochart'));
 }
 // navegadores sem acesso a pastas: copia os arquivos escolhidos
@@ -2031,7 +2042,7 @@ $('chartOnly').onchange=async()=>{
     startRecording(id,1,sync);
   }catch(e){chartErrT(chartErrText(e));}
 };
-window.__rrChart={parseChartText,parseMidi,parseSng,chartHash};window.__rrLib=LIB;
+window.__rrChart={parseChartText,parseMidi,parseSng,chartHash};window.__rrLib=LIB;window.__rrScan={scanFolder,show,libRefresh,busy:()=>chartBusy};
 window.__rrAnalyze=analyze;window.__rrYT=YTP;window.__rrNet=()=>G.net;
 $('offset').oninput=e=>{G.offset=+e.target.value;$('offVal').textContent=G.offset+' ms';savePrefs();};
 $('playBtn').onclick=()=>{if(G.online){if(G.net&&G.net.connected&&G.net.host)netHostStart();return;}if(G.songDef.lib&&!curCustom()){const m=G.songDef.meta;libEnsure(m,true).then(()=>{if(G.state==='menu'&&G.songDef.lib&&G.songDef.meta.id===m.id)startGame();},()=>{});return;}startGame();};
