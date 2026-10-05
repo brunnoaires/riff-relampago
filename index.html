@@ -1075,9 +1075,9 @@ function drawAtkSlots(bx,by,bw){
   }
   c.restore();
 }
-// casas que aparecem na guitarra: no fácil e no médio só as que a dificuldade usa (sem a laranja),
+// casas que aparecem na guitarra: no fácil e no médio fica sem a laranja,
 // mais alguma que o chart importado pedir; as notas da dificuldade de cima (duelo) se ajeitam nelas
-const LANES_MIN={easy:3,medium:4,hard:5,expert:5};
+const LANES_MIN={easy:4,medium:4,hard:5,expert:5};
 function fitLanes(p){
   let m=LANES_MIN[p.diff]||5;for(const ns of[p.notes,p.ghost])if(ns)for(const n of ns)if(n.lane>=m)m=n.lane+1;p.nl=Math.min(5,m);
   if(p.alt&&p.nl<5){const seen=new Set();p.alt=p.alt.map(n=>n.lane<p.nl?n:Object.assign({},n,{lane:p.nl-1})).filter(n=>{const k=n.time.toFixed(3)+'|'+n.lane;return!seen.has(k)&&!!seen.add(k);});}
