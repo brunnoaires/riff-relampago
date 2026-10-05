@@ -1206,7 +1206,7 @@ function hitNote(n,t){
   P.meter=Math.min(1,P.meter+(P.spActive?.03:.016));
   setMute(false);
   P.flash[n.lane]=performance.now();
-  burst(n.lane,P.spActive?'#9feeff':LANE_COLORS[n.lane],14);
+  hitFx(n.lane,n.time,1);
   const err=Math.abs(n.time-t);
   pushText(err<.035?'PERFEITO':err<.07?'ÓTIMO':'BOM');
   if(n.len>0){n.holding=true;n.susT=n.time;P.holds.push(n);}
@@ -1262,11 +1262,11 @@ function updatePlayer(t){
   }
   for(const n of P.holds){
     if(!n.holding)continue;
-    if(!P.held[n.lane]){n.holding=false;continue;}
+    if(!P.held[n.lane]){n.holding=false;if(t<n.endTime-.06)smoke(n.lane);continue;}
     const te=Math.min(t,n.endTime);
     if(te>n.susT){P.susAcc+=(te-n.susT)/G.song.spb*25*mult();n.susT=te;}
-    if(Math.random()<.5)spark(n.lane);
-    if(t>=n.endTime){n.holding=false;n.done=true;}
+    if(Math.random()<.5)spark(n.lane,n,t);
+    if(t>=n.endTime){n.holding=false;n.done=true;hitFx(n.lane,n.endTime,.55);}
   }
   P.holds=P.holds.filter(n=>n.holding);
   if(P.susAcc>=1){const w=Math.floor(P.susAcc);P.score+=w;P.susAcc-=w;}
@@ -1293,8 +1293,26 @@ function finish(){G.state='done';netSendEnd(true,false);sfxCrowd(AC.currentTime,
 
 // ---------- efeitos ----------
 function laneX(l,p){const h=(P.nl-1)/2;return P.CX+(P.flipOn?h-l:l-h)*P.laneW*p;}
-function burst(l,color,n){const x=laneX(l,1);for(let i=0;i<n;i++){const a=-Math.PI/2+(Math.random()-.5)*2.2,s=120+Math.random()*320;P.fx.push({x,y:hitY,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.45+Math.random()*.25,age:0,c:color,r:2+Math.random()*3});}}
-function spark(l){const x=laneX(l,1)+(Math.random()-.5)*P.laneW*.4;P.fx.push({x,y:hitY,vx:(Math.random()-.5)*80,vy:-120-Math.random()*200,life:.3,age:0,c:P.spActive?'#bff5ff':'#ffe6a8',r:1.5+Math.random()*1.5});}
+// fogo: brasas que saltam do traste e caem com a gravidade (no Poder Estelar viram faíscas de plasma)
+const rgbOf=h=>cached('rgb:'+h,()=>hexRGB(h)),fxCap=()=>STG.lite?90:220,PLASMA='80,175,255';
+function ember(x,y,vx,vy,life,col,r,g,sp){P.fx.push({x,y,vx,vy,life,age:0,c:col,rgb:rgbOf(col),r,g,sp});}
+function embers(l,col,n,sp,sc){const u=P.laneW/112*(sc||1),x0=laneX(l,1);for(let i=0;i<n&&P.fx.length<fxCap();i++){const a=-Math.PI/2+(Math.random()-.5)*1.25,s=(180+Math.random()*420)*u;ember(x0+(Math.random()-.5)*P.laneW*.45,hitY-P.laneW*.06,Math.cos(a)*s,Math.sin(a)*s,.4+Math.random()*.5,col,(1.3+Math.random()*1.9)*u,(sp?420:980)*u,sp);}}
+function burst(l,color,n){embers(l,color,n,P.spActive);}
+// acerto: língua de fogo sobe do traste; notas do mesmo acorde crescem juntas e ganham uma faixa de luz
+function hitFx(l,tm,sc){
+  const now=performance.now(),sp=P.spActive,col=sp?'#9feeff':LANE_COLORS[l],L=P.fl||(P.fl=[]);let ch=1;
+  if(sc>=1){for(const f of L)if(f.sc>=1&&Math.abs(f.tm-tm)<.005&&now-f.at<150)ch++;if(ch>1){for(const f of L)if(f.sc>=1&&Math.abs(f.tm-tm)<.005&&now-f.at<150)f.ch=ch;P.cf={at:now,tm,sp};}}
+  L.push({l,tm,at:now,life:(sp?340:300)*(.6+.4*sc),sc,ch,sp,rgb:sp?PLASMA:rgbOf(col),v:Math.random()*4|0});if(L.length>16)L.shift();
+  embers(l,col,Math.round((STG.lite?5:ch>1?9:12)*sc),sp,sc);
+}
+// nota longa segurada: brasas no traste e soltando da corda acesa
+function spark(l,n,t){
+  if(P.fx.length>=fxCap())return;const u=P.laneW/112,sp=P.spActive,col=sp?'#bff5ff':LANE_COLORS[l];
+  if(n&&!STG.lite&&Math.random()<.4){const z2=Math.min(ZMAX,zOf(n.endTime,t));if(z2>.3){const p=pz(Math.random()**1.5*z2);ember(laneX(l,p)+(Math.random()-.5)*P.laneW*.15*p,yAt(p),(Math.random()-.5)*70*u*p,-(70+Math.random()*150)*u*p,.3+Math.random()*.3,col,(1+Math.random()*1.3)*u*p,300*u*p,sp);return;}}
+  ember(laneX(l,1)+(Math.random()-.5)*P.laneW*.35,hitY-P.laneW*.1,(Math.random()-.5)*130*u,-(200+Math.random()*330)*u,.35+Math.random()*.35,col,(1.1+Math.random()*1.6)*u,(sp?380:900)*u,sp);
+}
+// soltou a nota longa antes do fim: a chama apaga numa fumacinha
+function smoke(l){if(STG.lite)return;const u=P.laneW/112,x=laneX(l,1);for(let i=0;i<4&&P.fx.length<fxCap();i++)P.fx.push({k:1,x:x+(Math.random()-.5)*P.laneW*.3,y:hitY-P.laneW*.15,vx:(Math.random()-.5)*30*u,vy:-(50+Math.random()*60)*u,life:.6+Math.random()*.4,age:0,r:P.laneW*(.16+Math.random()*.1),g:-30});}
 function pushText(s,big){P.texts.push({s,t:performance.now(),big:!!big});if(P.texts.length>3)P.texts.shift();}
 function msg(s,c){P.msgs.push({s,c,t:performance.now()});if(P.msgs.length>2)P.msgs.shift();}
 
@@ -1503,6 +1521,25 @@ function drawCrowd(now,beatPh,excite,menu){
 // brilho redondo pronto (desenhar sprite é bem mais leve que criar gradiente a cada quadro)
 function glowSprite(rgb,core){return cached('glow:'+rgb+':'+(core||0),()=>{const R=64,[o,x]=offCanvas(R*2,R*2),g=x.createRadialGradient(R,R,0,R,R,R);if(core)g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(core?.35:0,`rgba(${rgb},1)`);g.addColorStop(1,`rgba(${rgb},0)`);x.fillStyle=g;x.fillRect(0,0,R*2,R*2);return o;});}
 function glow(x,y,r,rgb,a,core){if(a<=0)return;c.globalAlpha=Math.min(1,a);c.drawImage(glowSprite(rgb,core),x-r,y-r,r*2,r*2);c.globalAlpha=1;}
+function glowE(x,y,rx,ry,img,a){if(a<=0)return;c.globalAlpha=Math.min(1,a);c.drawImage(img,x-rx,y-ry,rx*2,ry*2);c.globalAlpha=1;}
+// língua de fogo pronta (4 variações por cor, trocadas rápido pra tremular): labareda principal, línguas menores
+// que abrem pros lados, uma lambida solta no alto, miolo claro e núcleo branco-amarelo
+function flameSprite(rgb,core,v){return cached('fla:'+rgb+':'+core+':'+v,()=>{
+  const w=64,h=176,[o,x]=offCanvas(w,h),R=rng(71+v*13),B=h-22,mid=rgb.split(',').map(n=>(+n+255*1.2)/2.2|0).join(',');
+  const tongue=(cx,b,bw,top,sw,col,a)=>{const g=x.createLinearGradient(0,b+bw,0,top);g.addColorStop(0,`rgba(${col},${a})`);g.addColorStop(.5,`rgba(${col},${a*.75})`);g.addColorStop(1,`rgba(${col},0)`);x.fillStyle=g;x.beginPath();x.moveTo(cx-bw,b);x.bezierCurveTo(cx-bw,b-(b-top)*.45,cx+sw-bw*.3,top+(b-top)*.3,cx+sw,top);x.bezierCurveTo(cx+sw+bw*.15,top+(b-top)*.35,cx+bw,b-(b-top)*.4,cx+bw,b);x.arc(cx,b,bw,0,Math.PI);x.fill();};
+  x.globalCompositeOperation='lighter';x.filter='blur(2.5px)';
+  tongue(w/2,B,17,8+R()*10,(R()-.5)*14,rgb,.85);
+  for(let i=0;i<5;i++){const d=(i-2)*7+(R()-.5)*5,e=Math.abs(i-2);tongue(w/2+d,B,6+R()*4,22+e*22+R()*34,d*1.1+(R()-.5)*16,rgb,.6);}
+  const wy=40+R()*34,wd=(R()<.5?-1:1)*(5+R()*8);tongue(w/2+wd,wy,2.6,wy-16-R()*14,wd*.6,rgb,.6);
+  x.filter='blur(2px)';
+  tongue(w/2,B,14,h*.3+R()*24,(R()-.5)*12,mid,.55);
+  tongue(w/2,B+3,9,h*.52+R()*18,(R()-.5)*8,core,.9);
+  x.filter='none';
+  return o;});}
+// anel de calor que abre no traste
+function ringSprite(rgb){return cached('ring:'+rgb,()=>{const R=64,[o,x]=offCanvas(R*2,R*2),g=x.createRadialGradient(R,R,0,R,R,R);g.addColorStop(0,`rgba(${rgb},0)`);g.addColorStop(.55,`rgba(${rgb},0)`);g.addColorStop(.78,`rgba(${rgb},1)`);g.addColorStop(.85,'rgba(255,248,230,1)');g.addColorStop(.92,`rgba(${rgb},.6)`);g.addColorStop(1,`rgba(${rgb},0)`);x.fillStyle=g;x.fillRect(0,0,R*2,R*2);return o;});}
+// raio de plasma (Poder Estelar)
+function bolt(x,y0,y1,amp){const n=6;c.beginPath();c.moveTo(x,y0);for(let i=1;i<=n;i++)c.lineTo(x+(Math.random()-.5)*amp*2,y0+(y1-y0)*i/n);c.strokeStyle='rgba(120,215,255,.4)';c.lineWidth=5;c.stroke();c.strokeStyle='#f0fcff';c.lineWidth=1.5;c.stroke();}
 const hexRGB=h=>{const n=parseInt(h.slice(1),16);return`${n>>16},${n>>8&255},${n&255}`;};
 // fumaça baixa no chão do palco (leve: poucos sprites pequenos)
 function drawFloorSmoke(now,pulse){const u=STG.u,fy=STG.floorY;for(let i=0;i<5;i++){const x=((i*.23+now*.01*(1+i%2))%1.2-.1)*W;glow(x,fy+10*u,160*u,'140,100,160',.08+.03*pulse);}}
@@ -1615,15 +1652,38 @@ function drawHighway(t){
   c.strokeStyle='rgba(255,255,255,.4)';c.lineWidth=2;c.beginPath();c.moveTo(CX-hw,hitY);c.lineTo(CX+hw,hitY);c.stroke();
 }
 function zOf(time,t){return(time-t)/P.D.win*ZMAX;}
+// nota longa: corda grossa com volume (sombra, borda escura, corpo, brilho de metal).
+// Segurada: vibra, o núcleo derrete em branco-amarelo e a energia corre até o traste. Solta/perdida: cinza e apagada.
+const TP=new Float64Array(96);
+// brilho que esfria com a distância (gradiente vertical pronto, por cor e tamanho de tela)
+const tailG=(col,a0,a1)=>cached('tg'+col+a0+a1+hitY+vanY,()=>{const g=c.createLinearGradient(0,hitY,0,yAt(pz(ZMAX)));g.addColorStop(0,hexA(col,a0));g.addColorStop(1,hexA(col,a1));return g;});
 function drawTail(n,t){
   const z1=Math.max(n.hit&&!n.holding?0:-.5,zOf(n.holding?Math.max(t,n.time):n.time,t)),z2=Math.min(ZMAX,zOf(n.endTime,t));
   if(z2<=-.5||z1>=ZMAX||z2<=z1)return;
-  const col=n.ghost||n.missed||(n.hit&&!n.holding)?'rgba(120,110,110,.6)':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
-  if(n.ghost)c.globalAlpha=.35;
-  const steps=14,w=P.laneW*.13;c.fillStyle=col;c.beginPath();
-  const pts=[];for(let i=0;i<=steps;i++){const z=z1+(z2-z1)*i/steps,p=pz(z);const wob=n.holding?Math.sin(performance.now()/40+i*1.3)*P.laneW*.06*p:0;pts.push([laneX(n.lane,p)+wob,yAt(p),w*p]);}
-  pts.forEach(([x,y,ww],i)=>i?c.lineTo(x-ww,y):c.moveTo(x-ww,y));for(let i=pts.length-1;i>=0;i--)c.lineTo(pts[i][0]+pts[i][2],pts[i][1]);
-  c.closePath();if(n.holding){c.shadowColor=col;c.shadowBlur=16;}c.fill();c.shadowBlur=0;c.globalAlpha=1;
+  const live=n.holding&&!P.out,dead=!live&&(n.ghost||n.missed||n.hit),now=performance.now(),sp=P.spActive&&!dead;
+  const col=dead?'#4e4749':sp?'#9feeff':LANE_COLORS[n.lane],lw=P.laneW,w=lw*(dead?.105:.14),S=live?18:12,pts=TP,lite=STG.lite;
+  for(let i=0;i<=S;i++){const z=z1+(z2-z1)*i/S,p=pz(z),e=1-i/S;
+    // corda vibrando: a onda desce até o traste e é mais forte perto dele
+    const wob=live?(Math.sin(now/26+z*5.5)*(.35+.65*e)+Math.sin(now/11+z*13)*.12*e)*lw*.065*p:0;
+    pts[i*3]=laneX(n.lane,p)+wob;pts[i*3+1]=yAt(p);pts[i*3+2]=w*p;}
+  // faixa ao longo da corda (k = meia largura, dx = deslocamento, tp = afina na ponta, pro brilho não acabar reto)
+  const band=(k,dx,fill,tp)=>{c.fillStyle=fill;c.beginPath();for(let i=0;i<=S;i++){const q=i*3,kk=tp?k*Math.min(1,(S-i)/3+.3):k;c.lineTo(pts[q]+(dx-kk)*pts[q+2],pts[q+1]);}for(let i=S;i>=0;i--){const q=i*3,kk=tp?k*Math.min(1,(S-i)/3+.3):k;c.lineTo(pts[q]+(dx+kk)*pts[q+2],pts[q+1]);}c.closePath();c.fill();};
+  if(live&&!lite){c.globalCompositeOperation='lighter';band(2.5,0,tailG(sp?'#5ab4ff':col,.26,.06),1);c.globalCompositeOperation='source-over';}
+  c.globalAlpha=n.ghost?.35:dead?.85:1;
+  if(!lite)band(1.32,.22,'rgba(0,0,0,.5)');
+  band(1,0,cached('s42'+col,()=>shade(col,.42)));
+  band(.74,-.05,col);
+  band(.36,-.24,dead?'#5a5254':cached('s15'+col,()=>shade(col,1.5)));
+  if(!live){if(!dead&&!lite)band(.1,-.4,'rgba(255,255,255,.55)');c.globalAlpha=1;return;}
+  // núcleo derretido e pulsos de energia descendo (mais rápidos que o braço)
+  c.globalCompositeOperation='lighter';c.globalAlpha=1;
+  const fk=.24+.05*Math.sin(now/23+n.lane*1.7);band(fk,-.08,tailG(sp?'#9fdcff':'#ffd98a',1,.4));band(fk*.4,-.08,tailG('#ffffff',.85,.25));
+  const D=.5,ph=((t*1.9*ZMAX/P.D.win/D)%1+1)%1,img=glowSprite(sp?'200,238,255':'255,226,150',1);
+  for(let z=z1+(1-ph)*D;z<z2-.05;z+=D){const fi=(z-z1)/(z2-z1)*S,i0=Math.min(S-1,fi|0),fr=fi-i0,q=i0*3,ww=pts[q+2];
+    glowE(pts[q]+(pts[q+3]-pts[q])*fr,pts[q+1]+(pts[q+4]-pts[q+1])*fr,ww*1.6,Math.max(ww*2,(yAt(pz(z-.14))-yAt(pz(z+.14)))*.8),img,.75);}
+  // plasma: faísca elétrica correndo pela corda
+  if(sp&&!lite&&Math.random()<.75){c.beginPath();for(let i=0;i<=S;i+=2){const q=i*3;c.lineTo(pts[q]+(Math.random()-.5)*pts[q+2]*3.4,pts[q+1]);}c.strokeStyle='rgba(120,215,255,.4)';c.lineWidth=4;c.stroke();c.strokeStyle='#f0fcff';c.lineWidth=1.3;c.stroke();}
+  c.globalAlpha=1;c.globalCompositeOperation='source-over';
 }
 function drawGem(n,t){
   const z=zOf(n.time,t);if(z>ZMAX||z<-.55)return;const p=pz(z),x=laneX(n.lane,p),y=yAt(p),r=P.laneW*.4*p,ry=r*.6;
@@ -1660,7 +1720,8 @@ function drawFrets(now){
     c.fillStyle=P.held[l]?col:cached('s.8'+col,()=>shade(col,.8));ell(x,hitY+pr,r*.86,ry*.82);
     c.fillStyle=P.held[l]?cached('s1.4'+col,()=>shade(col,1.4)):'#1a1214';ell(x,hitY+pr,r*.56,ry*.52);
     c.fillStyle='rgba(255,255,255,.35)';ell(x-r*.35,hitY+pr-ry*.45,r*.26,ry*.12);
-    if(fl>0){c.globalCompositeOperation='lighter';const gr=c.createRadialGradient(x,hitY-r*.6,0,x,hitY-r*.6,r*2.4);gr.addColorStop(0,`rgba(255,240,200,${.9*fl})`);gr.addColorStop(.4,hexA(P.spActive?'#7fe9ff':col,.6*fl));gr.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=gr;c.beginPath();c.ellipse(x,hitY-r*.6,r*1.6,r*2.4*(.6+.4*fl),0,0,Math.PI*2);c.fill();c.globalCompositeOperation='source-over';}
+    // botão em brasa no acerto (sprites prontos, sem gradiente por quadro)
+    if(fl>0){c.globalCompositeOperation='lighter';glowE(x,hitY-ry,r*1.35,ry*(1.1+.7*fl),glowSprite(rgbOf(P.spActive?'#7fe9ff':col),1),.55*fl);glowE(x,hitY+pr,r*.9,ry*.9,glowSprite(P.spActive?'200,238,255':'255,236,190'),.6*fl);c.globalCompositeOperation='source-over';}
     if(!P.touch&&W>=600){c.fillStyle='rgba(247,236,223,.55)';c.font='600 13px "Chakra Petch",sans-serif';c.textAlign='center';c.fillText(labels[l],x,hitY+ry+20);}
   }
   // duelo: corda quebrada fica com um X vermelho e quantas vezes falta apertar
@@ -1672,11 +1733,43 @@ function drawFrets(now){
     c.fillStyle='#ff8f8f';c.font=`700 ${Math.max(13,r*.55)|0}px "Chakra Petch",sans-serif`;c.textAlign='center';c.fillText('APERTE ×'+br.need,x,hitY-r*1.15);
   }
 }
+// nota longa segurada: chama baixa e contínua no traste
+function drawHoldFire(now){
+  if(!P.holds.length||P.out||G.state!=='play')return;const lw=P.laneW,sp=P.spActive,core=sp?'205,238,255':'255,238,185';
+  for(const n of P.holds){if(!n.holding||n.susT>=n.endTime)continue;
+    const x=laneX(n.lane,1),rgb=sp?PLASMA:rgbOf(LANE_COLORS[n.lane]),fl=1+.12*Math.sin(now/41+n.lane*2.1)+.07*Math.sin(now/17+n.lane),h=lw*1.3*fl,w=lw*.7*(2-fl);
+    glow(x,hitY,lw*.55,rgb,.45);
+    c.drawImage(flameSprite(rgb,core,(((now/50)|0)+n.lane)%4),x-w/2,hitY+h*.12-h,w,h);
+    glowE(x,hitY,lw*.34,lw*.2,glowSprite(core,1),.5+.15*Math.sin(now/23));
+    if(sp&&!STG.lite&&Math.random()<.5)bolt(x,hitY,hitY-h*.8,lw*.16);
+  }
+}
+// chamas de acerto: sobem rápido, afinam e se soltam do traste; anel de calor abre embaixo
+function drawFlames(now){
+  const L=P.fl;if(!L)return;while(L.length&&now-L[0].at>400)L.shift();if(!L.length)return;const lw=P.laneW;
+  const cf=P.cf;if(cf&&now-cf.at<300){let x0=1e9,x1=-1e9;for(const f of L)if(f.sc>=1&&Math.abs(f.tm-cf.tm)<.005){const x=laneX(f.l,1);x0=Math.min(x0,x);x1=Math.max(x1,x);}
+    if(x1>x0){const k=(now-cf.at)/300;glowE((x0+x1)/2,hitY,(x1-x0)/2+lw*.8,lw*.42*(1-.4*k),glowSprite(cf.sp?'225,250,255':'255,226,150',1),.6*(1-k));c.globalAlpha=.85*(1-k);c.fillStyle=cf.sp?'#eafcff':'#fff3d0';c.fillRect(x0,hitY-1,x1-x0,2);c.globalAlpha=1;}}
+  for(const f of L){const k=(now-f.at)/f.life;if(k<0||k>=1)continue;
+    const x=laneX(f.l,1),s=f.sc*(1+(f.ch-1)*.16)*(f.sp?1.12:1),g=Math.min(1,k/.14),h=lw*2*s*(.3+.7*(1-(1-g)**2))*(1-.3*k),w=lw*.95*s*(1-.4*k),y=hitY+h*.12-k*k*lw*.6;
+    if(k<.35)glow(x,hitY,lw*.6*s,f.rgb,.7*(1-k/.35));
+    c.globalAlpha=1-k*k;c.drawImage(flameSprite(f.rgb,f.sp?'205,238,255':'255,238,185',(f.v+((now/40)|0))%4),x-w/2,y-h,w,h);c.globalAlpha=1;
+    const rk=Math.min(1,k/.7),rr=lw*(.42+.55*rk)*s;glowE(x,hitY,rr,rr*.6,ringSprite(f.sp?'150,230,255':'255,170,80'),(1-rk)*.95);
+    if(f.sp&&!STG.lite&&k<.55)bolt(x+(Math.random()-.5)*lw*.2,hitY,y-h*.8,lw*.22);
+  }
+}
 function drawFx(dt){
+  const now=performance.now();
+  // fumaça da nota solta (por baixo, sem somar luz)
+  for(const f of P.fx){f.age+=dt;f.x+=f.vx*dt;f.y+=f.vy*dt;f.vy+=(f.g==null?600:f.g)*dt;if(f.k===1&&f.age<f.life){const k=f.age/f.life;glow(f.x,f.y,f.r*(1+1.8*k),'96,88,90',.5*(1-k)*Math.min(1,f.age*8));}}
   c.globalCompositeOperation='lighter';
-  for(const f of P.fx){f.age+=dt;f.x+=f.vx*dt;f.y+=f.vy*dt;f.vy+=600*dt;const a=1-f.age/f.life;if(a<=0)continue;c.fillStyle=hexA(f.c,a);ell(f.x,f.y,f.r,f.r);}
-  c.globalCompositeOperation='source-over';
-  P.fx=P.fx.filter(f=>f.age<f.life);
+  drawHoldFire(now);drawFlames(now);
+  // brasas: rastro curto + ponto quente; começam branco-amarelas e esfriam na cor da pista
+  c.lineCap='round';
+  for(const f of P.fx){if(f.k===1)continue;const k=f.age/f.life;if(k>=1)continue;const a=1-k*k,hot=k<.3;
+    c.globalAlpha=a;c.strokeStyle=hot?(f.sp?'#eafcff':'#fff1c4'):f.c;c.lineWidth=f.r*.9;c.beginPath();c.moveTo(f.x,f.y);c.lineTo(f.x-f.vx*.028,f.y-f.vy*.028);c.stroke();
+    glow(f.x,f.y,f.r*3.2,f.rgb||rgbOf(f.c),a*.6);}
+  c.globalAlpha=1;c.lineCap='butt';c.globalCompositeOperation='source-over';
+  if(P.fx.length)P.fx=P.fx.filter(f=>f.age<f.life);
 }
 // ---------- mostradores do HUD: multiplicador, medidor da plateia, tubo do Poder Estelar ----------
 // moldura cromada (fica pronta em sprite, por tamanho)
