@@ -712,7 +712,34 @@ function sfxThunder(){
   const t=AC.currentTime,s=AC.createBufferSource(),g=AC.createGain();s.buffer=thunderBuf;s.playbackRate.value=.94+Math.random()*.14;g.gain.value=1.1;s.connect(g);g.connect(buses.fx);s.start(t);
 }
 window.__rrSfx={thunder:sfxThunder,data:thunderData};
-function sfxStar(){const t=AC.currentTime;const g=env(t,.4,.9,buses.fx,.05);const o=osc('sawtooth',300,t,g,1);o.frequency.exponentialRampToValueAtTime(1600,t+.7);const o2=osc('sine',600,t,g,1);o2.frequency.exponentialRampToValueAtTime(2400,t+.7);sfxCrowd(t,2.2,.35);}
+// poder estelar (~1,6 s, tudo sintetizado): pancada grave (parente do trovão) + power chord distorcido no tom da música + vento subindo + brilho de estrelas + galera
+let starCv=null,starT=-9;
+function sfxStar(pan){
+  if(!AC)return;const t=AC.currentTime,v=t-starT<1.5?.6:1;starT=t;// dois jogadores juntos: não estoura
+  // o (mono) vai para o lado do jogador; vento e brilho têm panorama próprio e vão direto para o fx
+  const V=1.7*v,pa=pan||0,SP=x=>{const p=AC.createStereoPanner?AC.createStereoPanner():AC.createGain();p.connect(buses.fx);if(p.pan)p.pan.value=x;return p;},o=AC.createGain(),pn=SP(pa),ds=AC.createGain();
+  o.gain.value=V;o.connect(pn);ds.gain.value=.4*v;ds.connect(buses.delay);
+  // pancada: grave que despenca + baque abafado + estalo de palhetada (como o estalo do trovão)
+  const kg=env(t,.55,.6,o,.002),k=osc('sine',170,t,kg,.62);k.frequency.exponentialRampToValueAtTime(40,t+.3);noise(t,'lowpass',380,.7,.22,.9,o);noise(t,'bandpass',3000,.7,.12,.7,o);
+  // power chord distorcido: entra com a alavanca subindo, filtro abre e vai fechando, eco no tempo da música
+  const r=G.song&&G.song.S?G.song.S.root:40,pre=AC.createGain(),ws=AC.createWaveShaper(),lp=AC.createBiquadFilter(),cg=AC.createGain();
+  pre.gain.value=.45;ws.curve=starCv||(starCv=curve(60));ws.oversample='2x';lp.type='lowpass';lp.Q.value=1.8;lp.frequency.setValueAtTime(1200,t);lp.frequency.exponentialRampToValueAtTime(4200,t+.15);lp.frequency.exponentialRampToValueAtTime(1600,t+1.7);
+  cg.gain.setValueAtTime(.0001,t);cg.gain.exponentialRampToValueAtTime(.28,t+.008);cg.gain.exponentialRampToValueAtTime(.18,t+.3);cg.gain.exponentialRampToValueAtTime(.1,t+1);cg.gain.exponentialRampToValueAtTime(.025,t+1.45);cg.gain.exponentialRampToValueAtTime(.0001,t+1.8);
+  pre.connect(ws);ws.connect(lp);lp.connect(cg);cg.connect(o);cg.connect(ds);
+  let last;[[0,-7],[0,7],[7,0],[12,3]].forEach(([iv,dt])=>{last=osc('sawtooth',mtof(r+iv),t,pre,1.9);last.detune.setValueAtTime(dt-150,t);last.detune.linearRampToValueAtTime(dt,t+.07);});
+  last.onended=()=>[o,pn,ds,wp,sp].forEach(x=>x.disconnect());
+  // vento subindo e cruzando da esquerda para a direita
+  const ns=AC.createBufferSource(),bp=AC.createBiquadFilter(),wg=AC.createGain(),wp=SP(pa);ns.buffer=noiseBuf;ns.loop=true;bp.type='bandpass';bp.Q.value=1.6;bp.frequency.setValueAtTime(300,t);bp.frequency.exponentialRampToValueAtTime(5000,t+.45);bp.frequency.exponentialRampToValueAtTime(9000,t+1);
+  wg.gain.setValueAtTime(.02,t);wg.gain.linearRampToValueAtTime(.85*V,t+.42);wg.gain.exponentialRampToValueAtTime(.2*V,t+.62);wg.gain.exponentialRampToValueAtTime(.0001,t+1);if(wp.pan){wp.pan.setValueAtTime(Math.max(-1,pa-.6),t);wp.pan.linearRampToValueAtTime(Math.min(1,pa+.6),t+.6);}
+  ns.connect(bp);bp.connect(wg);wg.connect(wp);ns.start(t,Math.random()*1.5);ns.stop(t+1.05);
+  // brilho: arpejo de oitavas e quintas subindo e piscando no alto, pulando de lado; dois senos quase iguais (batimento = cintilar) + triângulo uma oitava acima
+  const sg=AC.createGain(),sp=SP(pa),b0=67+(r+5)%12,ss=[osc('sine',1,t,sg,1.6),osc('sine',1,t,sg,1.6),osc('triangle',1,t,sg,1.6)];ss[0].detune.value=-2;ss[1].detune.value=2;
+  sg.connect(sp);sg.connect(ds);sg.gain.setValueAtTime(.0001,t);sg.gain.setValueAtTime(.0001,t+.1);
+  [0,7,12,19,24,19,24].forEach((iv,i,a)=>{const ti=t+.1+i*.05,f=mtof(b0+iv),am=(.055+.009*i)*V;ss.forEach((s,j)=>s.frequency.setValueAtTime(j>1?f*2:f,ti));if(sp.pan)sp.pan.setValueAtTime(Math.max(-1,Math.min(1,pa+(i%2?.45:-.45))),ti);
+    sg.gain.linearRampToValueAtTime(am,ti+.004);sg.gain.exponentialRampToValueAtTime(i<a.length-1?am*.2:.0001,i<a.length-1?ti+.045:t+1.5);});
+  // galera: grito + o grave da multidão
+  sfxCrowd(t,2.2,.9,false,o);sfxCrowd(t+.05,2,.28,true,o);
+}
 function setMute(on){
   if(!AC)return;P.muted=on;
   buses.pm[P.i].g.gain.setTargetAtTime(on?.04:1,AC.currentTime,on?.015:.008);
@@ -1248,7 +1275,7 @@ function strum(){
 }
 function press(l){if(P.out||P.held[l]||l>=P.nl)return;if(P.eff.length&&duelOn()&&duelPress(l))return;P.held[l]=1;if(P.mode==='tap'||P.touch)tapHit(l);}
 function release(l){P.held[l]=0;}
-function activateSP(){if(G.state!=='play'||G.paused||P.out)return;if(duelOn()){duelKey();return;}if(P.spActive||P.energy<.5)return;P.spActive=true;sfxStar();msg('PODER ESTELAR!','#9feeff');}
+function activateSP(){if(G.state!=='play'||G.paused||P.out)return;if(duelOn()){duelKey();return;}if(P.spActive||P.energy<.5)return;P.spActive=true;sfxStar(G.players.length>1?(P.i?.3:-.3):0);msg('PODER ESTELAR!','#9feeff');}
 
 function updatePlayer(t){
   const dt=Math.max(0,t-P.lastT);P.lastT=t;
