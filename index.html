@@ -1637,7 +1637,8 @@ function drawHighway(t){
     x.restore();
     return{cv:cv2,x0,y0,bw,bh};
   });
-  c.drawImage(bc.cv,bc.x0,bc.y0,bc.bw,bc.bh);
+  // o braço é um pouco transparente: o palco aparece por trás
+  c.globalAlpha=.8;c.drawImage(bc.cv,bc.x0,bc.y0,bc.bw,bc.bh);c.globalAlpha=1;
   if(P.spActive){c.fillStyle='rgba(60,170,255,.3)';c.beginPath();c.moveTo(CX-hw*pF,yF);c.lineTo(CX+hw*pF,yF);c.lineTo(CX+hw*pN,yN);c.lineTo(CX-hw*pN,yN);c.closePath();c.fill();}
   // trastes (linhas de batida) de metal e marcações
   const bts=G.song.beats;let bA,bB;
@@ -1702,26 +1703,53 @@ function drawTail(n,t){
   if(sp&&!lite&&Math.random()<.75){c.beginPath();for(let i=0;i<=S;i+=2){const q=i*3;c.lineTo(pts[q]+(Math.random()-.5)*pts[q+2]*3.4,pts[q+1]);}c.strokeStyle='rgba(120,215,255,.4)';c.lineWidth=4;c.stroke();c.strokeStyle='#f0fcff';c.lineWidth=1.3;c.stroke();}
   c.globalAlpha=1;c.globalCompositeOperation='source-over';
 }
+// notas: cada cor vira uma imagem pronta (corpo com volume, aro cromado, tampa colorida abaulada e centro afundado)
+const GEM_R=60;
+function gemSprite(col,star){return cached((star?'gst:':'gem:')+col,()=>{
+  const R=GEM_R,ry=R*.6,dep=ry*.62,pad=R*.55,W2=R*2+pad*2,H2=ry*2+dep+pad*2,cx=W2/2,cy=pad+ry,[o,x]=offCanvas(W2,H2);
+  const el=(X,Y,rx,rr)=>{x.beginPath();x.ellipse(X,Y,rx,rr,0,0,Math.PI*2);};
+  const sp=(X,Y,Rr,sq)=>{x.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?Rr*.45:Rr;x.lineTo(X+Math.cos(a)*r,Y+Math.sin(a)*r*sq);}x.closePath();};
+  // sombra no braço
+  x.save();x.filter=`blur(${R*.07}px)`;x.fillStyle='rgba(0,0,0,.6)';el(cx,cy+dep+ry*.12,R*1.02,ry*.92);x.fill();x.restore();
+  if(!star){
+    // lateral: cilindro mais escuro nas pontas
+    const sg=x.createLinearGradient(cx-R,0,cx+R,0);sg.addColorStop(0,shade(col,.2));sg.addColorStop(.32,shade(col,.55));sg.addColorStop(.55,shade(col,.72));sg.addColorStop(1,shade(col,.18));
+    x.fillStyle=sg;x.beginPath();x.moveTo(cx-R,cy);x.lineTo(cx-R,cy+dep);x.ellipse(cx,cy+dep,R,ry,0,Math.PI,0,true);x.lineTo(cx+R,cy);x.closePath();x.fill();
+    x.strokeStyle='rgba(255,255,255,.18)';x.lineWidth=R*.025;x.beginPath();x.ellipse(cx,cy+dep*.55,R*.99,ry*.99,0,Math.PI*.15,Math.PI*.85);x.stroke();
+    // aro cromado
+    const rg=x.createLinearGradient(0,cy-ry,0,cy+ry);rg.addColorStop(0,'#ffffff');rg.addColorStop(.42,'#d6d2da');rg.addColorStop(.62,'#7f7a86');rg.addColorStop(1,'#f4f0f6');
+    x.fillStyle=rg;el(cx,cy,R,ry);x.fill();x.strokeStyle='rgba(0,0,0,.4)';x.lineWidth=R*.03;x.stroke();
+    // tampa colorida abaulada
+    x.fillStyle='rgba(0,0,0,.45)';el(cx,cy+ry*.03,R*.83,ry*.78);x.fill();
+    const cg=x.createRadialGradient(cx-R*.25,cy-ry*.5,R*.04,cx,cy,R*.86);cg.addColorStop(0,shade(col,1.6));cg.addColorStop(.32,shade(col,1.12));cg.addColorStop(.72,col);cg.addColorStop(1,shade(col,.5));
+    x.fillStyle=cg;el(cx,cy-ry*.04,R*.8,ry*.74);x.fill();
+    // centro afundado com botão de vidro
+    const hg=x.createRadialGradient(cx,cy+ry*.06,0,cx,cy+ry*.06,R*.37);hg.addColorStop(0,'#000');hg.addColorStop(.72,'#150d10');hg.addColorStop(1,shade(col,.32));
+    x.fillStyle=hg;el(cx,cy+ry*.04,R*.37,ry*.34);x.fill();
+    const bg=x.createRadialGradient(cx-R*.07,cy-ry*.1,0,cx,cy,R*.22);bg.addColorStop(0,'#ffffff');bg.addColorStop(.55,'#ebe6ee');bg.addColorStop(1,'#8f8994');
+    x.fillStyle=bg;el(cx,cy-ry*.01,R*.21,ry*.19);x.fill();
+    // brilho de vidro
+    x.fillStyle='rgba(255,255,255,.6)';el(cx-R*.36,cy-ry*.42,R*.23,ry*.11);x.fill();
+    x.globalAlpha=.4;x.strokeStyle='#fff';x.lineWidth=R*.045;x.beginPath();x.ellipse(cx,cy-ry*.04,R*.69,ry*.62,0,Math.PI*1.08,Math.PI*1.5);x.stroke();x.globalAlpha=1;
+  }else{
+    // nota de frase estelar: estrela com volume, aro branco e brilho em volta
+    x.globalAlpha=.6;x.drawImage(glowSprite('170,240,255'),cx-R*1.55,cy-R*1.55*.62,R*3.1,R*3.1*.62);x.globalAlpha=1;
+    for(let d=dep;d>0;d-=1.5){x.fillStyle=shade(col,.25+.3*(1-d/dep));sp(cx,cy+d,R*1.12,.62);x.fill();}
+    const rg=x.createLinearGradient(0,cy-R*.7,0,cy+R*.7);rg.addColorStop(0,'#ffffff');rg.addColorStop(.55,'#dcf7ff');rg.addColorStop(1,'#8fbccb');
+    x.fillStyle=rg;sp(cx,cy,R*1.12,.62);x.fill();x.strokeStyle='rgba(0,0,0,.3)';x.lineWidth=R*.025;x.stroke();
+    const cg=x.createRadialGradient(cx-R*.2,cy-ry*.45,R*.04,cx,cy,R*.8);cg.addColorStop(0,shade(col,1.6));cg.addColorStop(.4,shade(col,1.1));cg.addColorStop(1,shade(col,.55));
+    x.fillStyle=cg;sp(cx,cy-ry*.03,R*.84,.62);x.fill();
+    x.fillStyle='rgba(255,255,255,.55)';sp(cx-R*.1,cy-ry*.2,R*.3,.5);x.fill();
+  }
+  return{img:o,w:W2,h:H2,ox:cx,oy:cy};
+});}
 function drawGem(n,t){
-  const z=zOf(n.time,t);if(z>ZMAX||z<-.55)return;const p=pz(z),x=laneX(n.lane,p),y=yAt(p),r=P.laneW*.4*p,ry=r*.6;
-  const phraseOk=n.star>=0&&!P.phrases[n.star].broken;
+  const z=zOf(n.time,t);if(z>ZMAX||z<-.55)return;const p=pz(z),x=laneX(n.lane,p),y=yAt(p),k=P.laneW*.4*p/GEM_R;
+  const star=n.star>=0&&!n.missed&&!P.phrases[n.star].broken;
   const dim=n.missed||n.ghost,col=dim?'#5a4f52':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
   c.globalAlpha=n.ghost?.32:n.missed?.55:1;
   if(P.ovOn&&!n.ghost)c.globalAlpha*=.12+.88*Math.abs(Math.sin(performance.now()/85+n.time*7.3));
-  c.fillStyle='rgba(0,0,0,.55)';ell(x,y+ry*.35,r*1.04,ry*1.04);
-  if(phraseOk&&!n.missed){
-    c.shadowColor='#bff5ff';c.shadowBlur=18*p;c.fillStyle='#eafcff';starPath(x,y,r*1.15,.62);c.fill();c.shadowBlur=0;
-    c.fillStyle=col;starPath(x,y,r*.8,.62);c.fill();
-  }else{
-    const dep=ry*.55,dark=dim?'#2e2729':cached('s45'+col,()=>shade(col,.45));
-    c.fillStyle=dark;ell(x,y+dep,r,ry);c.fillRect(x-r,y,r*2,dep);
-    c.fillStyle='#1b1416';ell(x,y+dep*.55,r*.98,ry*.98);
-    c.fillStyle='#f2ece4';ell(x,y,r,ry);
-    c.fillStyle=cached('s7'+col,()=>shade(col,.72));ell(x,y,r*.82,ry*.78);c.fillStyle=col;ell(x,y-ry*.06,r*.76,ry*.66);
-    c.fillStyle='#16100f';ell(x,y+ry*.02,r*.34,ry*.3);
-    c.fillStyle='rgba(255,255,255,.95)';ell(x,y-ry*.02,r*.24,ry*.2);
-    c.fillStyle='rgba(255,255,255,.35)';ell(x-r*.38,y-ry*.42,r*.22,ry*.12);
-  }
+  const s=gemSprite(col,star);c.drawImage(s.img,x-s.ox*k,y-s.oy*k,s.w*k,s.h*k);
   c.globalAlpha=1;
 }
 function drawFrets(now){
