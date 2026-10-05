@@ -671,7 +671,19 @@ const SYN={
     if(dur>.4){const l=AC.createOscillator();l.frequency.value=5.6;const lg=AC.createGain();lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(22,t+.45);l.connect(lg);os.forEach(o=>lg.connect(o.detune));l.start(t);l.stop(end+.1);}
   },
 };
-function sfxMiss(){if(!AC)return;const t=AC.currentTime;const g=env(t,.5,.18,buses.fx);const o=osc('square',92,t,g,.2);o.frequency.linearRampToValueAtTime(70,t+.15);const o2=osc('sawtooth',131,t,g,.2);o2.detune.value=40;noise(t,'bandpass',400,1,.12,.3,buses.fx);}
+// erro: palhetada abafada raspando a corda e um acorde desafinado que cai, como a nota errada do GH3
+let missCurve=null;
+function sfxMiss(){
+  if(!AC)return;const t=AC.currentTime,R=Math.random(),f0=[82.4,87.3,92.5,98][R*4|0];
+  missCurve=missCurve||curve(28);
+  const ws=AC.createWaveShaper();ws.curve=missCurve;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.setValueAtTime(2400,t);lp.frequency.exponentialRampToValueAtTime(500,t+.28);
+  const g=env(t,.26,.32,buses.fx,.003);ws.connect(lp);lp.connect(g);
+  const pre=AC.createGain();pre.gain.value=.5;pre.connect(ws);
+  for(const[m,d]of[[1,0],[1.06,9],[1.41,-7]]){const o=osc('sawtooth',f0*m,t,pre,.34);o.detune.value=d;o.detune.linearRampToValueAtTime(d-90-R*60,t+.3);}
+  noise(t,'bandpass',1900+R*700,1.3,.07,.32,buses.fx);noise(t+.012,'highpass',4200,.7,.04,.14,buses.fx);
+  const th=env(t,.3,.12,buses.fx,.002);const ob=osc('sine',62,t,th,.13);ob.frequency.exponentialRampToValueAtTime(38,t+.12);
+  setTimeout(()=>{try{pre.disconnect();ws.disconnect();lp.disconnect();}catch(e){}},600);
+}
 function sfxCrowd(t,dur,vol,boo,dest){const s=AC.createBufferSource();s.buffer=noiseBuf;s.loop=true;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=boo?350:1300;f.Q.value=boo?1.4:.6;const g=AC.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+dur*.25);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(dest||master);s.start(t);s.stop(t+dur+.1);}
 // trovão curto (estalo + estrondo grave que rola 2 vezes, ~1,4 s), gerado na hora: nenhum arquivo de som
 function thunderData(sr,seed){
@@ -1712,25 +1724,23 @@ function gemSprite(col,star){return cached((star?'gst:':'gem:')+col,()=>{
   // sombra no braço
   x.save();x.filter=`blur(${R*.07}px)`;x.fillStyle='rgba(0,0,0,.6)';el(cx,cy+dep+ry*.12,R*1.02,ry*.92);x.fill();x.restore();
   if(!star){
-    // lateral: cilindro mais escuro nas pontas
-    const sg=x.createLinearGradient(cx-R,0,cx+R,0);sg.addColorStop(0,shade(col,.2));sg.addColorStop(.32,shade(col,.55));sg.addColorStop(.55,shade(col,.72));sg.addColorStop(1,shade(col,.18));
+    // como no GH3: cor por fora, anel preto e centro branco, com a lateral escura da cor
+    const sg=x.createLinearGradient(cx-R,0,cx+R,0);sg.addColorStop(0,'#050404');sg.addColorStop(.3,shade(col,.42));sg.addColorStop(.55,shade(col,.55));sg.addColorStop(1,'#040303');
     x.fillStyle=sg;x.beginPath();x.moveTo(cx-R,cy);x.lineTo(cx-R,cy+dep);x.ellipse(cx,cy+dep,R,ry,0,Math.PI,0,true);x.lineTo(cx+R,cy);x.closePath();x.fill();
-    x.strokeStyle='rgba(255,255,255,.18)';x.lineWidth=R*.025;x.beginPath();x.ellipse(cx,cy+dep*.55,R*.99,ry*.99,0,Math.PI*.15,Math.PI*.85);x.stroke();
-    // aro cromado
-    const rg=x.createLinearGradient(0,cy-ry,0,cy+ry);rg.addColorStop(0,'#ffffff');rg.addColorStop(.42,'#d6d2da');rg.addColorStop(.62,'#7f7a86');rg.addColorStop(1,'#f4f0f6');
-    x.fillStyle=rg;el(cx,cy,R,ry);x.fill();x.strokeStyle='rgba(0,0,0,.4)';x.lineWidth=R*.03;x.stroke();
-    // tampa colorida abaulada
-    x.fillStyle='rgba(0,0,0,.45)';el(cx,cy+ry*.03,R*.83,ry*.78);x.fill();
-    const cg=x.createRadialGradient(cx-R*.25,cy-ry*.5,R*.04,cx,cy,R*.86);cg.addColorStop(0,shade(col,1.6));cg.addColorStop(.32,shade(col,1.12));cg.addColorStop(.72,col);cg.addColorStop(1,shade(col,.5));
-    x.fillStyle=cg;el(cx,cy-ry*.04,R*.8,ry*.74);x.fill();
-    // centro afundado com botão de vidro
-    const hg=x.createRadialGradient(cx,cy+ry*.06,0,cx,cy+ry*.06,R*.37);hg.addColorStop(0,'#000');hg.addColorStop(.72,'#150d10');hg.addColorStop(1,shade(col,.32));
-    x.fillStyle=hg;el(cx,cy+ry*.04,R*.37,ry*.34);x.fill();
-    const bg=x.createRadialGradient(cx-R*.07,cy-ry*.1,0,cx,cy,R*.22);bg.addColorStop(0,'#ffffff');bg.addColorStop(.55,'#ebe6ee');bg.addColorStop(1,'#8f8994');
-    x.fillStyle=bg;el(cx,cy-ry*.01,R*.21,ry*.19);x.fill();
-    // brilho de vidro
-    x.fillStyle='rgba(255,255,255,.6)';el(cx-R*.36,cy-ry*.42,R*.23,ry*.11);x.fill();
-    x.globalAlpha=.4;x.strokeStyle='#fff';x.lineWidth=R*.045;x.beginPath();x.ellipse(cx,cy-ry*.04,R*.69,ry*.62,0,Math.PI*1.08,Math.PI*1.5);x.stroke();x.globalAlpha=1;
+    x.strokeStyle='rgba(255,255,255,.22)';x.lineWidth=R*.03;x.beginPath();x.ellipse(cx,cy+dep*.5,R*.985,ry*.985,0,Math.PI*.18,Math.PI*.82);x.stroke();
+    // contorno preto e disco colorido abaulado
+    x.fillStyle='#070506';el(cx,cy,R,ry);x.fill();
+    const cg=x.createRadialGradient(cx-R*.3,cy-ry*.55,R*.05,cx,cy,R*.95);cg.addColorStop(0,shade(col,1.5));cg.addColorStop(.38,shade(col,1.08));cg.addColorStop(.8,col);cg.addColorStop(1,shade(col,.62));
+    x.fillStyle=cg;el(cx,cy-ry*.02,R*.93,ry*.88);x.fill();
+    // anel preto
+    const kg=x.createLinearGradient(0,cy-ry*.5,0,cy+ry*.5);kg.addColorStop(0,'#000');kg.addColorStop(.6,'#151214');kg.addColorStop(1,'#2a2427');
+    x.fillStyle=kg;el(cx,cy,R*.54,ry*.5);x.fill();
+    // centro branco abaulado
+    const wg=x.createRadialGradient(cx-R*.1,cy-ry*.16,R*.02,cx,cy,R*.4);wg.addColorStop(0,'#ffffff');wg.addColorStop(.55,'#f1eef2');wg.addColorStop(1,'#a9a3ad');
+    x.fillStyle=wg;el(cx,cy-ry*.02,R*.39,ry*.35);x.fill();
+    x.fillStyle='rgba(255,255,255,.9)';el(cx-R*.12,cy-ry*.17,R*.15,ry*.08);x.fill();
+    // brilho na cor
+    x.globalAlpha=.5;x.strokeStyle='#fff';x.lineWidth=R*.06;x.beginPath();x.ellipse(cx,cy-ry*.03,R*.76,ry*.7,0,Math.PI*1.12,Math.PI*1.55);x.stroke();x.globalAlpha=1;
   }else{
     // nota de frase estelar: estrela com volume, aro branco e brilho em volta
     x.globalAlpha=.6;x.drawImage(glowSprite('170,240,255'),cx-R*1.55,cy-R*1.55*.62,R*3.1,R*3.1*.62);x.globalAlpha=1;
