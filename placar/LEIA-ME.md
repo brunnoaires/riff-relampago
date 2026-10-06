@@ -1,8 +1,11 @@
-# Placar global
+# Placar global e pessoas online
 
-O placar de cada música fica num banco gratuito do Firebase (Realtime Database, plano Spark, sem cartão).
-O site lê o endereço do banco em `placar/config.json`. Enquanto ele estiver vazio, o menu mostra
-"O placar global ainda não foi ligado".
+O placar de cada música e o contador de pessoas online ficam num banco gratuito do Firebase
+(Realtime Database, plano Spark, sem cartão). O site lê o endereço do banco em `placar/config.json`.
+Enquanto ele estiver vazio, o menu mostra "O placar global ainda não foi ligado" e o contador não aparece.
+
+Se você já tinha colado as regras antes, cole o [`regras.json`](regras.json) de novo e publique:
+a parte `online` dele é a do contador.
 
 ## Como ligar (uma vez só)
 
@@ -32,3 +35,12 @@ O site lê o endereço do banco em `placar/config.json`. Enquanto ele estiver va
 - Não tem login, então alguém que entenda de programação consegue mandar uma pontuação falsa.
   Para tirar uma, abra a aba **Dados** no Firebase, ache a música e apague a linha.
 - Músicas de MP3 do computador não entram no placar, porque cada pessoa tem um arquivo diferente.
+
+## Contador de pessoas online
+
+- No alto do menu aparece quantas pessoas estão com o jogo aberto agora, contando você, e quantas estão tocando.
+- Cada navegador marca presença no banco a cada 40 segundos, com um id próprio que não é o do placar.
+  Várias abas no mesmo navegador contam como uma pessoa. Quem fecha o jogo sai na hora; se o navegador
+  fechar sem avisar, a pessoa sai da conta em uns dois minutos.
+- Uma aba esquecida em segundo plano para de contar depois de 5 minutos e volta quando a pessoa abre a aba de novo.
+- Como o placar, não tem login: alguém que entenda de programação consegue inflar o número enquanto mantiver um script rodando.

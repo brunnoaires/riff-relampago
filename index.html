@@ -64,6 +64,12 @@ h2{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mu
 /* placar global à esquerda do menu (embaixo no celular) */
 .menurow{display:flex;gap:16px;align-items:flex-start;justify-content:center;width:min(1236px,100%);margin-block:auto}
 .menurow>.panel{flex:1 1 900px;min-width:0;margin-block:0}
+.toprow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px}
+.onnow{margin:0;display:inline-flex;align-items:center;gap:8px;padding:4px 11px 4px 9px;border-radius:999px;background:rgba(10,30,16,.6);border:1px solid rgba(80,230,120,.35);font-size:.8rem;color:#c9f7d6;white-space:nowrap}
+.onnow i{width:9px;height:9px;border-radius:50%;background:#3dff7a;box-shadow:0 0 8px #3dff7a;animation:onpulse 2s ease-in-out infinite}
+.onnow b{color:#fff}
+@keyframes onpulse{50%{opacity:.35;box-shadow:0 0 2px #3dff7a}}
+@media (prefers-reduced-motion:reduce){.onnow i{animation:none}}
 .placar{flex:0 0 300px;background:rgba(22,11,26,.74);backdrop-filter:blur(10px);border:1px solid var(--panel-edge);border-radius:14px;padding:20px 18px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
 .placar h3{font:700 1.08rem/1.25 var(--ui);margin:6px 0 12px;overflow-wrap:anywhere}
 .placar .seg button{padding:6px 4px;font-size:.78rem}
@@ -172,7 +178,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
     <div class="plme"><span>Seu nick: <b id="plNick"></b></span><button class="swap" id="nickEdit">Trocar</button></div>
   </aside>
   <div class="panel">
-    <p class="eyebrow">Turnê de garagem · sozinho, em dupla ou online</p>
+    <div class="toprow"><p class="eyebrow">Turnê de garagem · sozinho, em dupla ou online</p><p class="onnow" id="onNow" aria-live="polite" hidden><i aria-hidden="true"></i><span></span></p></div>
     <h1>Riff Relâmpago</h1>
     <p class="lede">Acerte as notas quando chegarem à linha, segure as notas longas e guarde as frases de estrela para soltar o Poder Estelar. Toque as músicas da casa, grave o chart de qualquer música do YouTube ou carregue um arquivo seu para o jogo criar as notas sozinho.</p>
     <div class="cols">
@@ -2219,8 +2225,56 @@ $('nickIn').addEventListener('keydown',e=>{if(e.key==='Enter')nickSave();else if
 fetch('placar/config.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).catch(()=>({})).then(c=>{
   const u=String(window.RR_PLACAR_URL||(c&&c.firebase)||'').trim().replace(/\/+$/,'');
   PLACAR.url=window.RR_PLACAR_URL||/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebaseio\.com|firebasedatabase\.app)$/i.test(u)?u:'';
-  PLACAR.qs=String(window.RR_PLACAR_QS||'');PLACAR.ready=true;placarRender();
+  PLACAR.qs=String(window.RR_PLACAR_QS||'');PLACAR.ready=true;placarRender();onlineBeat();
 });
+
+// ---------- pessoas online ----------
+// No mesmo Firebase do placar: cada navegador marca online/<id> a cada 40 s e conta quem marcou nos últimos 90 s.
+// O id é outro, separado do id do placar, e é o mesmo em todas as abas do navegador (cada pessoa conta uma vez).
+const ONLINE={busy:false,at:0,hiddenAt:0,gone:false,n:0,pl:0};
+function onlineId(){
+  let u=store.get('rr:oid','');
+  if(!/^[0-9a-z]{16}$/.test(u)){const A='0123456789abcdefghijklmnopqrstuvwxyz',r=new Uint32Array(16);crypto.getRandomValues(r);u='';for(let i=0;i<16;i++)u+=A[r[i]%36];store.set('rr:oid',u);}
+  return u;
+}
+async function onlineBeat(){
+  if(!PLACAR.url||ONLINE.busy)return;
+  if(document.hidden&&performance.now()-ONLINE.hiddenAt>300000){onlineLeave();return;}
+  ONLINE.busy=true;ONLINE.at=performance.now();ONLINE.gone=false;
+  try{
+    const me=onlineId();
+    await placarPut(`online/${me}`,{st:menuOpen()?'menu':'tocando',t:{'.sv':'timestamp'}});
+    if(!menuOpen()||document.hidden)return;
+    const o=await placarGet('online'),all=Object.entries(o&&typeof o==='object'?o:{});
+    // a hora de referência é a do servidor, que acabou de carimbar a nossa própria marca
+    const now=num(o&&o[me]&&o[me].t)||Math.max(0,...all.map(([,v])=>num(v&&v.t)));
+    let n=0,pl=0;const old={};
+    for(const[id,v]of all){
+      const age=now-num(v&&v.t);
+      if(age<=90000){n++;if(v.st==='tocando')pl++;}
+      else if(age>180000&&Object.keys(old).length<25)old[id]=null; // quem fechou sem avisar sai da lista
+    }
+    if(Object.keys(old).length)fetch(placarURL('online'),{method:'PATCH',body:JSON.stringify(old)}).catch(()=>{});
+    ONLINE.n=Math.max(1,n);ONLINE.pl=pl;
+  }catch(e){}finally{ONLINE.busy=false;onlineRender();}
+}
+function onlineRender(){
+  const el=$('onNow');if(!el)return;
+  if(!PLACAR.url||!ONLINE.n){el.hidden=true;return;}
+  const n=ONLINE.n,pl=ONLINE.pl;
+  el.querySelector('span').innerHTML=`<b>${n.toLocaleString('pt-BR')}</b> ${n===1?'pessoa online':'pessoas online'}${pl?` · ${pl.toLocaleString('pt-BR')} tocando`:''}`;
+  el.title=n===1?'Só você está com o jogo aberto agora':`${n} pessoas estão com o jogo aberto agora, contando você`;
+  el.hidden=false;
+}
+function onlineLeave(){
+  if(!PLACAR.url||ONLINE.gone)return;ONLINE.gone=true;
+  try{fetch(placarURL(`online/${onlineId()}`),{method:'DELETE',keepalive:true}).catch(()=>{});}catch(e){}
+}
+setInterval(onlineBeat,40000);
+// voltou para o menu: conta de novo se a última contagem já tem um tempinho
+new MutationObserver(()=>{if(menuOpen()&&performance.now()-ONLINE.at>15000)onlineBeat();}).observe($('menu'),{attributes:true,attributeFilter:['hidden']});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)ONLINE.hiddenAt=performance.now();else if(ONLINE.gone||performance.now()-ONLINE.at>15000)onlineBeat();});
+addEventListener('pagehide',onlineLeave);
 
 // ---------- online: salas com até 8 jogadores ----------
 // O criador da sala é o centro: recebe tudo de cada amigo e repassa para os outros.

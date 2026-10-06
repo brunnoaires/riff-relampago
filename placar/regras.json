@@ -2,6 +2,16 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "online": {
+      ".read": true,
+      "$id": {
+        ".write": "$id.matches(/^[0-9a-z]{16}$/)",
+        ".validate": "newData.hasChildren(['st', 't'])",
+        "st": { ".validate": "newData.val() === 'menu' || newData.val() === 'tocando'" },
+        "t": { ".validate": "newData.val() === now" },
+        "$outro": { ".validate": false }
+      }
+    },
     "placar": {
       "$musica": {
         "$dif": {
