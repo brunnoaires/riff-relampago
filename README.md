@@ -21,3 +21,4 @@ Tudo roda no navegador, em `index.html` mais a biblioteca PeerJS em `vendor/` (l
 - Jogador 2: H J K L Ç, Enter para o Poder Estelar.
 - Modo Palhetada (1 jogador): segure a cor e palhete com Enter, ↑ ou ↓.
 - Esc pausa. No celular, toque nas pistas.
+- Volume do jogo: no menu e na pausa, ou com − e + a qualquer hora; M tira o som. Fica salvo no navegador.

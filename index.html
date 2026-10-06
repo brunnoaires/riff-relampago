@@ -99,6 +99,19 @@ h2{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mu
 .seg button[aria-pressed="true"]{background:var(--fire);border-color:var(--fire);color:#1b0b02}
 .hint{margin:8px 0 0;color:var(--muted);font-size:.82rem;line-height:1.45}
 input[type=range]{width:100%;accent-color:var(--fire)}
+.volctl{display:flex;align-items:center;gap:10px}
+.volctl input{flex:1;min-width:0}
+.volbtn{flex:none;width:38px;height:38px;display:grid;place-items:center;padding:0;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--panel-edge);color:var(--fg);cursor:pointer}
+.volbtn:hover{background:rgba(255,255,255,.12)}
+.volbtn svg,.voltoast svg{width:20px;height:20px;display:block}
+.volbtn[aria-pressed=true]{color:#ff6b6b;border-color:rgba(255,107,107,.55)}
+.volval{flex:none;min-width:3.3em;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.88rem}
+.pvol{margin-top:18px;text-align:left}
+.voltoast{position:fixed;top:14px;left:50%;z-index:80;display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:999px;background:rgba(14,8,18,.88);border:1px solid var(--panel-edge);color:var(--fg);font-size:.95rem;font-variant-numeric:tabular-nums;opacity:0;transform:translate(-50%,-10px);pointer-events:none;transition:opacity .2s,transform .2s}
+.voltoast.on{opacity:1;transform:translate(-50%,0)}
+.voltoast .bar{width:110px;height:6px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
+.voltoast .bar i{display:block;height:100%;background:var(--fire)}
+.voltoast.mute{color:#ff8b8b}
 .keys{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;margin-top:22px;padding-top:18px;border-top:1px solid var(--panel-edge);color:var(--muted);font-size:.85rem}
 .keys span{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 kbd{display:inline-grid;place-items:center;min-width:28px;height:28px;padding:0 6px;border-radius:6px;font:700 .85rem var(--ui);color:#140a0a;background:#e8ddd0;box-shadow:0 3px 0 rgba(0,0,0,.5)}
@@ -191,6 +204,7 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
         <div id="battleBox" hidden><h2>Batalha</h2><div id="battles" class="seg"></div><div id="coopPick"></div><p class="hint" id="battleHint"></p></div>
         <div><h2>Dificuldade</h2><div id="diffs"></div></div>
         <div id="modeBox"><h2>Modo</h2><div id="modes" class="seg"></div><p class="hint" id="modeHint"></p></div>
+        <div><h2>Volume do jogo</h2><div class="volctl"></div><p class="hint">Durante a música, as teclas − e + mudam o volume e M tira o som.</p></div>
         <div><h2><label for="offset">Atraso do áudio</label><span id="offVal">0 ms</span></h2><input type="range" id="offset" min="-150" max="150" step="5" value="0"><p class="hint">Se as notas parecerem adiantadas em relação ao som, aumente.</p></div>
         <div><h2>Teclas</h2><button class="btn" id="bindBtn">Trocar as teclas</button></div>
       </div>
@@ -223,8 +237,10 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
       <button class="btn primary" id="saveRecBtn" hidden>Salvar chart</button>
       <button class="btn" id="quitBtn">Voltar ao menu</button>
     </div>
+    <div class="pvol"><h2>Volume do jogo</h2><div class="volctl"></div></div>
   </div>
 </section>
+<div id="volToast" class="voltoast" role="status" aria-live="polite"></div>
 
 <section id="ytPanel" class="overlay" hidden>
   <div class="panel small yt-panel">
@@ -639,7 +655,9 @@ function initAudio(){
   if(AC)return;
   AC=new(window.AudioContext||window.webkitAudioContext)();
   const comp=AC.createDynamicsCompressor();comp.threshold.value=-16;comp.ratio.value=4;comp.attack.value=.005;comp.release.value=.2;
-  master=AC.createGain();master.gain.value=.85;master.connect(comp);comp.connect(AC.destination);buses.out=comp;
+  master=AC.createGain();master.gain.value=.85;master.connect(comp);buses.out=comp;
+  // volume do site: a última parada antes das caixas de som
+  buses.vol=AC.createGain();buses.vol.gain.value=volGain();buses.vol.connect(AC.destination);comp.connect(buses.vol);
   const G_=v=>{const g=AC.createGain();g.gain.value=v;return g;};
   buses.drums=G_(.9);buses.drums.connect(master);
   buses.bass=G_(.42);buses.bass.connect(master);
@@ -652,7 +670,7 @@ function initAudio(){
   const dl=AC.createDelay(1);dl.delayTime.value=.33;const fb=G_(.28),wet=G_(.22);lo.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(wet);wet.connect(master);buses.delay=dl;
   buses.pm=[0,1].map(()=>{const g=G_(1),p=AC.createStereoPanner?AC.createStereoPanner():null;if(p){g.connect(p);p.connect(buses.lead);}else g.connect(buses.lead);return{g,p};});
   // faixa carregada pelo jogador: abafa quando alguém erra
-  buses.muffle=AC.createBiquadFilter();buses.muffle.type='lowpass';buses.muffle.frequency.value=20000;const mg=G_(.9);buses.muffle.connect(mg);mg.connect(AC.destination);buses.trackGain=mg;
+  buses.muffle=AC.createBiquadFilter();buses.muffle.type='lowpass';buses.muffle.frequency.value=20000;const mg=G_(.9);buses.muffle.connect(mg);mg.connect(buses.vol);buses.trackGain=mg;
   buses.dry=G_(1);buses.dry.connect(mg);
   buses.fx=G_(.6);buses.fx.connect(master);
   noiseBuf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
@@ -768,7 +786,7 @@ function setMute(on){
     // só quem toca a guitarra (ou o chart inteiro) abafa a música toda
     const any=G.players.some(p=>p.muted&&!p.out&&(!p.part||p.part==='guitar'));buses.muffle.frequency.setTargetAtTime(any?900:20000,AC.currentTime,any?.02:.01);
   }
-  if(G.song&&G.song.yt&&YTP.player&&YTP.player.setVolume){const any=G.players.some(p=>p.muted&&!p.out);YTP.player.setVolume(any?30:100);}
+  if(G.song&&G.song.yt&&YTP.player&&YTP.player.setVolume){const any=G.players.some(p=>p.muted&&!p.out);ytVol(any?30:100);}
 }
 
 // ---------- YouTube ----------
@@ -880,8 +898,51 @@ if(sel.n===2)G.nPlayers=2;
 if(sel.n==='online')G.online=true;
 if(typeof sel.offset==='number')G.offset=sel.offset;
 if(['same','parts','turns'].includes(sel.battle))G.battle=sel.battle;
+G.vol=typeof sel.vol==='number'&&sel.vol>=0&&sel.vol<=100?Math.round(sel.vol):100;G.mute=sel.mute===true;
 G.coop=Array.isArray(sel.coop)&&sel.coop.length===2&&sel.coop.every(x=>x==='guitar'||x==='base')?sel.coop.slice():['guitar','base'];
-const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset,battle:G.battle,coop:G.coop});
+// ---------- volume do jogo ----------
+// Um volume só do site: vale para as músicas, os efeitos e o vídeo do YouTube, e fica salvo no navegador.
+const volGain=()=>G.mute?0:(G.vol/100)**2;
+function ytVol(base){
+  if(base!=null)YTP.volBase=base;
+  try{if(YTP.player&&YTP.player.setVolume)YTP.player.setVolume(Math.round((YTP.volBase==null?100:YTP.volBase)*volGain()));}catch(e){}
+}
+const VOL_SVG=(on,lv)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>'+
+  (on?(lv>0?'<path d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/>':'')+(lv>50?'<path d="M19 7a7 7 0 0 1 0 10"/>':''):'<path d="M17 9.5l5 5M22 9.5l-5 5"/>')+'</svg>';
+function volRender(){
+  const on=!G.mute&&G.vol>0,txt=G.mute?'Mudo':G.vol+'%';
+  for(const w of document.querySelectorAll('.volctl')){
+    if(!w.firstChild){
+      w.innerHTML='<button type="button" class="volbtn"></button><input type="range" min="0" max="100" step="5" aria-label="Volume do jogo"><span class="volval"></span>';
+      w.querySelector('button').onclick=()=>volSet(G.vol,!G.mute);
+      w.querySelector('input').oninput=e=>volSet(+e.target.value,false);
+    }
+    const b=w.querySelector('button');b.innerHTML=VOL_SVG(on,G.vol);b.setAttribute('aria-pressed',G.mute);b.setAttribute('aria-label',G.mute?'Voltar o som':'Tirar o som');b.title=G.mute?'Voltar o som (M)':'Tirar o som (M)';
+    w.querySelector('input').value=G.vol;w.querySelector('.volval').textContent=txt;
+  }
+}
+function volSet(v,mute,toast){
+  G.vol=Math.max(0,Math.min(100,Math.round(v)));G.mute=!!mute;
+  if(AC&&buses.vol)buses.vol.gain.setTargetAtTime(volGain(),AC.currentTime,.03);
+  ytVol();volRender();savePrefs();
+  if(toast){
+    const t=$('volToast');t.innerHTML=VOL_SVG(!G.mute&&G.vol>0,G.vol)+(G.mute?'<span>Mudo</span>':`<span class="bar"><i style="width:${G.vol}%"></i></span><span>${G.vol}%</span>`);
+    t.classList.toggle('mute',G.mute);t.classList.add('on');clearTimeout(volSet.tm);volSet.tm=setTimeout(()=>t.classList.remove('on'),1100);
+  }
+}
+// − e + mudam o volume e M tira o som, a qualquer hora, se a tecla não for de tocar e ninguém estiver digitando
+addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const d=e.code==='Minus'||e.code==='NumpadSubtract'?-10:e.code==='Equal'||e.code==='NumpadAdd'?10:0,m=e.code==='KeyM';
+  if(!d&&!m)return;
+  const el=document.activeElement;if(el&&(el.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)&&el.type!=='range'))return;
+  if(!$('bindPanel').hidden||KEYS1[e.code]||KEYS2[e.code]||STAR1[e.code]!==undefined||STAR2[e.code]!==undefined||STRUM[e.code])return;
+  e.preventDefault();
+  if(m){if(!e.repeat)volSet(G.vol,!G.mute,true);}
+  else volSet(G.mute&&d>0?Math.max(G.vol,10):G.vol+d,false,true);
+});
+volRender();
+const savePrefs=()=>store.set('rr:prefs',{song:G.songDef.lib?G.songDef.id:G.songDef.custom?sel.song:G.songDef.id,diffs:G.diffs,mode:G.mode,n:G.online?'online':G.nPlayers,offset:G.offset,battle:G.battle,coop:G.coop,vol:G.vol,mute:G.mute});
 
 // ---------- batalha: mesmo chart, coop (cada um escolhe guitarra ou base) ou duelo com ataques ----------
 const BATTLES={same:{label:'Mesmo chart',hint:'Todo mundo toca o mesmo chart e ganha quem fizer mais pontos.'},
@@ -1174,7 +1235,7 @@ async function startYT(startAt,NP){
   const token=G.ytToken=Math.random();
   try{await ytPrepare(ch.videoId);}catch(e){if(G.ytToken===token){if(G.online)netSendEnd(false,true);toMenu();menuNote(ytErrText(e.message),true);}return;}
   if(G.ytToken!==token||G.state!=='play')return;
-  YTP.player.setPlaybackRate(1);YTP.player.setVolume(100);
+  YTP.player.setPlaybackRate(1);ytVol(100);
   if(startAt){const late=(performance.now()-startAt)/1000;if(late>0){G.ytSeek=late;G.ytStartAt=performance.now();}else G.ytStartAt=startAt;}
   else G.ytStartAt=performance.now()+2400;
 }
@@ -1189,7 +1250,7 @@ async function startRecording(videoId,rate,sync){
   const token=G.ytToken=Math.random();
   try{await ytPrepare(videoId);}catch(e){if(G.ytToken===token){G.rec=null;toMenu();menuNote(ytErrText(e.message),true);}return;}
   if(G.ytToken!==token||G.state!=='record')return;
-  YTP.player.setVolume(100);YTP.player.setPlaybackRate(rate);
+  ytVol(100);YTP.player.setPlaybackRate(rate);
   G.ytStartAt=performance.now()+2400;
 }
 function recDown(l){P=G.players[0];const t=songT();if(!G.ytGo||t<0||G.rec.down[l]!=null)return;
