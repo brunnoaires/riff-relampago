@@ -144,6 +144,10 @@ button:focus-visible{outline:2px solid var(--star);outline-offset:2px}
 .libhead{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:10px 0 2px}
 .libsearch{margin:0 0 4px}
 .tabs{margin-bottom:10px}
+.ctier{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:14px 2px 2px}.ctier:first-of-type{margin-top:4px}
+.ctier h3{margin:0;font-size:.95rem}.ctier span{color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.song.cklock{opacity:.5}.song.ckmiss{opacity:.6;border-style:dashed}
+.song .tag{display:inline-block;margin-right:6px;padding:0 6px;border-radius:999px;background:rgba(255,138,31,.16);color:var(--fire);font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .tabs button{padding:8px 10px;font-size:.9rem}
 .songlist{max-height:min(56vh,520px);overflow-y:auto;overscroll-behavior:contain;padding:2px 6px 2px 2px;scrollbar-width:thin;scrollbar-color:rgba(255,138,31,.5) transparent}
 .libbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:0 0 2px}
@@ -2247,11 +2251,12 @@ function results(ok){
     const key=`rr:best:${G.songDef.lib?G.songDef.id:G.songDef.custom?'custom:'+(cur?cur.name:''):G.songDef.id}:${P.diff}`,best=store.get(key,0);
     let record=false;if(ok&&P.score>best){store.set(key,P.score);record=true;}
     const stars=starsOf(P,ok);
+    const car=ok&&!G.online&&G.songDef.lib?carRecord(G.songDef.meta.name,P.diff,stars):null;
     $('resEyebrow').textContent=`${name} · ${P.D.label}`;
     $('resTitle').textContent=ok?(stars>=5?'Lendário!':stars>=4?'Show incrível':stars>=3?'Mandou bem':'Você terminou'):'A plateia vaiou';
     body.innerHTML=`<div class="stars">${ok?[0,1,2,3,4].map(i=>`<span class="${i<stars?'on':''}">★</span>`).join(''):`<span style="font-size:1rem;letter-spacing:0;color:var(--muted)">Você chegou a ${Math.round(Math.min(1,Math.max(0,P.lastT/G.song.endTime))*100)}% da música</span>`}</div>
       <div class="bigscore">${P.score.toLocaleString('pt-BR')}</div>${record?'<span class="badge">Novo recorde</span>':''}
-      <div class="statgrid"><div><b>${pct}%</b><span>notas</span></div><div><b>${P.maxCombo}</b><span>maior sequência</span></div><div><b>${Math.max(best,record?P.score:0).toLocaleString('pt-BR')}</b><span>recorde</span></div></div><p class="hint" id="resGlobal" hidden></p>`;
+      <div class="statgrid"><div><b>${pct}%</b><span>notas</span></div><div><b>${P.maxCombo}</b><span>maior sequência</span></div><div><b>${Math.max(best,record?P.score:0).toLocaleString('pt-BR')}</b><span>recorde</span></div></div>${car?`<p class="note">Carreira, nível ${car.w.i+1}: ${car.stars>car.old?(car.old?`melhorou de ${car.old} para ${car.stars} estrelas`:`${car.stars} ${car.stars>1?'estrelas':'estrela'}`):`continua com ${car.old} ${car.old>1?'estrelas':'estrela'}`}.${car.msgs.map(m=>' '+escH(m)+'.').join('')}</p>`:''}<p class="hint" id="resGlobal" hidden></p>`;
     if(ok&&PLACAR.url&&placarSong(G.songDef)){
       const el=$('resGlobal'),lbl=P.D.label;el.hidden=false;el.textContent='Enviando para o placar global…';
       placarSend(G.songDef,P).then(r=>{if(!r)return;el.textContent=r.novo?(r.pos>=0?`Você está em ${r.pos+1}º lugar no placar global do ${lbl}.`:'Seu recorde foi para o placar global.'):`Seu melhor no placar global do ${lbl} continua ${r.best.toLocaleString('pt-BR')}.`;})
@@ -2778,7 +2783,7 @@ function buildMenu(){
   const all=songs,tab=menuTab(),T={};
   const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
   const tb=document.createElement('div');tb.className='seg tabs';tb.setAttribute('role','tablist');
-  for(const[k,l]of[['jogo','Músicas'],['lib',`Biblioteca${LIB.list.length?' ('+LIB.list.length+')':''}`],['add','Adicionar']]){
+  for(const[k,l]of[['jogo','Músicas'],['car','Carreira'],['lib',`Biblioteca${LIB.list.length?' ('+LIB.list.length+')':''}`],['add','Adicionar']]){
     const b=document.createElement('button');b.textContent=l;b.setAttribute('role','tab');b.setAttribute('aria-pressed',k===tab);b.setAttribute('aria-selected',k===tab);
     b.onclick=()=>{LIB.tab=k;store.set('rr:tab',k);LIB.sel=null;buildMenu();};tb.appendChild(b);
     const d=document.createElement('div');d.className='songs';T[k]=d;
@@ -2842,6 +2847,7 @@ function buildMenu(){
   songs.appendChild(cb);
   }
   buildLibCards(T.lib,bestOf,esc);
+  buildCareer(T.car,esc);
   const box=T[tab];box.classList.add('songlist');all.appendChild(box);
   }
 
@@ -2902,10 +2908,86 @@ function buildMenu(){
   if(G.songDef.yt||(G.online&&G.net&&G.net.hostSong&&G.net.hostSong.kind==='yt'))loadYTApi().catch(()=>{});
   placarRender();
 }
+// ---------- modo carreira ----------
+// a carreira solo do Guitar Hero III: 8 níveis, 4 músicas cada, encore no fim e batalha contra chefe nos níveis 2, 5 e 8
+// (setlist: en.wikipedia.org/wiki/List_of_songs_in_Guitar_Hero_III:_Legends_of_Rock). As músicas vêm da pasta da casa
+// ou da biblioteca de cada um; o jogo não traz nenhuma delas.
+const CAREER=[
+  {name:'Começando pequeno',songs:['Hit Me with Your Best Shot','Slow Ride','Story of My Life','Talk Dirty to Me'],enc:'Rock and Roll All Nite'},
+  {name:'Seu primeiro show de verdade',songs:['Barracuda','Mississippi Queen',"School's Out",'Sunshine of Your Love'],boss:'Guitar Battle vs. Tom Morello',enc:'Bulls on Parade'},
+  {name:'Gravando o clipe',songs:['Lay Down','Miss Murder','The Seeker','When You Were Young'],enc:'Paint It Black'},
+  {name:'Invasão europeia',songs:['Anarchy in the U.K.','Kool Thing','Paranoid','My Name Is Jonas'],enc:'Even Flow'},
+  {name:'Blues da cadeia',songs:['Holiday in Cambodia','La Grange','Rock You Like a Hurricane','Same Old Song and Dance'],boss:'Guitar Battle vs. Slash',enc:'Welcome to the Jungle'},
+  {name:'A banda mais quente do planeta',songs:['Black Magic Woman','Black Sunshine','Cherub Rock','The Metal'],enc:'Pride and Joy'},
+  {name:'Ao vivo no Japão',songs:["3's & 7's",'Before I Forget','Knights of Cydonia','Stricken'],enc:'Cult of Personality'},
+  {name:'Batalha pela sua alma',songs:['Cliffs of Dover','The Number of the Beast','One','Raining Blood'],boss:'The Devil Went Down to Georgia'},
+];
+// quantas músicas do nível liberam o encore (no GH3 depende da dificuldade da carreira)
+const CAREER_NEED={easy:3,medium:3,hard:4,expert:4};
+const carKey=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\(.*?\)|\[.*?\]/g,'').replace(/[.'’]/g,'').replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').replace(/^the /,'').trim();
+const carData=()=>store.get('rr:carreira',{});
+const carStars=(dk,t)=>(carData()[dk]||{})[carKey(t)]||0;
+// a música da carreira na pasta da casa ou na biblioteca
+function carFind(t){const k=carKey(t);return LIB.house.find(m=>carKey(m.name)===k)||LIB.list.find(m=>carKey(m.name)===k)||null;}
+function carTier(i,dk){
+  const T=CAREER[i],have=T.songs.filter(carFind),done=T.songs.filter(t=>carStars(dk,t)>0).length;
+  const reqOk=done>=Math.min(CAREER_NEED[dk]||4,have.length);
+  const bossOk=!T.boss||!carFind(T.boss)||carStars(dk,T.boss)>0;
+  const encOpen=reqOk&&bossOk;
+  const complete=encOpen&&(!T.enc||!carFind(T.enc)||carStars(dk,T.enc)>0);
+  const stars=[...T.songs,T.boss,T.enc].filter(Boolean).reduce((a,t)=>a+carStars(dk,t),0);
+  return{T,have:have.length,done,need:Math.min(CAREER_NEED[dk]||4,have.length),bossOpen:reqOk,encOpen,complete,stars};
+}
+const carOpen=(i,dk)=>i===0||(carOpen(i-1,dk)&&carTier(i-1,dk).complete);
+// onde a música está na carreira: {tier, kind: 'song' | 'boss' | 'enc'}
+function carWhere(name){const k=carKey(name);for(let i=0;i<CAREER.length;i++){const T=CAREER[i];if(T.songs.some(t=>carKey(t)===k))return{i,kind:'song'};if(T.boss&&carKey(T.boss)===k)return{i,kind:'boss'};if(T.enc&&carKey(T.enc)===k)return{i,kind:'enc'};}return null;}
+// guarda o resultado de uma música da carreira e diz o que foi liberado
+function carRecord(name,dk,stars){
+  const w=carWhere(name);if(!w||stars<1)return null;
+  // só conta o que já está liberado na carreira (a mesma música tocada fora da ordem, pela biblioteca, não vale)
+  const st0=carTier(w.i,dk);if(!carOpen(w.i,dk)||(w.kind==='boss'&&!st0.bossOpen)||(w.kind==='enc'&&!st0.encOpen))return null;
+  const before=CAREER.map((_,i)=>[carOpen(i,dk),carTier(i,dk)]);
+  const d=carData(),k=carKey(name);d[dk]=d[dk]||{};const old=d[dk][k]||0;
+  if(stars<=old)return{w,old,stars,msgs:[]};
+  d[dk][k]=stars;store.set('rr:carreira',d);
+  const msgs=[];
+  CAREER.forEach((T,i)=>{const[o0,t0]=before[i],t1=carTier(i,dk);
+    if(!t0.bossOpen&&t1.bossOpen&&T.boss&&carFind(T.boss))msgs.push(`Batalha liberada: ${T.boss}`);
+    if(!t0.encOpen&&t1.encOpen&&T.enc&&carFind(T.enc))msgs.push(`Encore liberado: ${T.enc}`);
+    if(!o0&&carOpen(i,dk))msgs.push(`Nível ${i+1} liberado: ${T.name}`);
+    if(!t0.complete&&t1.complete&&i===CAREER.length-1)msgs.push('Você zerou a carreira!');});
+  return{w,old,stars,msgs};
+}
+function buildCareer(box,esc){
+  const dk=G.diffs[0],D=DIFFS[dk];
+  const p=document.createElement('p');p.className='hint';
+  p.textContent=`Carreira no ${D.label}. Termine ${CAREER_NEED[dk]} músicas de um nível para liberar o encore, e o encore para abrir o próximo nível. Nos níveis 2, 5 e 8 a batalha contra o chefe vem antes do encore. As músicas vêm da pasta da casa e da sua biblioteca; as que faltam ficam tracejadas.`;
+  box.appendChild(p);
+  if(G.online||G.nPlayers>1){const n=document.createElement('p');n.className='hint';n.textContent='A carreira é para 1 jogador. Escolha "Sozinho" para o resultado contar.';box.appendChild(n);}
+  CAREER.forEach((T,i)=>{
+    const open=carOpen(i,dk),st=carTier(i,dk),h=document.createElement('div');h.className='ctier';
+    h.innerHTML=`<h3>${i+1}. ${esc(T.name)}</h3><span>${open?`${st.stars} ★ · ${st.complete?'concluído':st.encOpen?'falta o encore':st.bossOpen?'falta o chefe':st.done+'/'+st.need+' músicas'}`:'bloqueado'}</span>`;box.appendChild(h);
+    const row=(t,kind,ok)=>{
+      const m=carFind(t),stars=carStars(dk,t),b=document.createElement('button');b.className='song';
+      const usable=open&&ok&&m;if(!m)b.classList.add('ckmiss');else if(!usable)b.classList.add('cklock');
+      b.setAttribute('aria-pressed',!!(m&&G.songDef.lib&&G.songDef.meta.id===m.id));b.disabled=!usable;
+      const tag=kind==='boss'?'<span class="tag">Chefe</span>':kind==='enc'?'<span class="tag">Encore</span>':'';
+      const ld=m&&LIB.loading&&LIB.loading.id===m.id;
+      const meta=!m?'Não está na casa nem na sua biblioteca. Importe em Biblioteca.':!open?'Nível bloqueado':!ok?(kind==='enc'?'Liberado ao terminar o nível':'Liberada ao terminar as músicas do nível'):[m.artist&&esc(m.artist),m.dur&&fmtTime(m.dur)].filter(Boolean).join(' · ')||'Pronta para tocar';
+      b.innerHTML=`<span class="nm">${tag}${esc(t)}</span><span class="meta">${meta}</span><span class="tier"><b>${stars?'★'.repeat(stars)+'☆'.repeat(5-stars):'☆☆☆☆☆'}</b>${ld?'carregando…':stars?'concluída':''}</span>`;
+      if(usable)b.onclick=()=>libSelect(m);
+      box.appendChild(b);
+    };
+    T.songs.forEach(t=>row(t,'song',true));
+    if(T.boss)row(T.boss,'boss',st.bossOpen);
+    if(T.enc)row(T.enc,'enc',st.encOpen);
+  });
+}
+window.__rrCareer={CAREER,carRecord,carTier,carOpen,carFind,rebuild:()=>buildMenu()};
 // aba em que a lista começa: a da música escolhida, ou a última aberta
 function menuTab(){
   if(!LIB.tab){const d=G.songDef;LIB.tab=d.lib&&!d.meta.house?'lib':d===CUSTOM||d.yt?'add':store.get('rr:tab','jogo');}
-  if(!['jogo','lib','add'].includes(LIB.tab))LIB.tab='jogo';
+  if(!['jogo','car','lib','add'].includes(LIB.tab))LIB.tab='jogo';
   return LIB.tab;
 }
 function searchBox(key,ph){
