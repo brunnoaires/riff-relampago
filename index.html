@@ -358,7 +358,7 @@ const DIFFS={
   hard:{label:'Difícil',lanes:5,grid:.5,minGap:.25,chords:true,gap:2,win:1.3,hit:.1,drain:.045,rate:3,gapS:.17},
   expert:{label:'Expert',lanes:5,grid:.25,minGap:0,chords:true,gap:2,win:1.05,hit:.095,drain:.055,rate:4.4,gapS:.11},
 };
-const MODES={tap:{label:'Toque',hint:'Basta apertar a tecla da cor quando a nota chegar.'},strum:{label:'Palhetada',hint:'Segure a cor com a mão esquerda e palhete com Enter, ↑ ou ↓, como na guitarra de plástico.'}};
+const MODES={tap:{label:'Toque',hint:'Basta apertar a tecla da cor quando a nota chegar.'},strum:{label:'Palhetada',hint:'Segure a cor com a mão esquerda e palhete com Enter, ↑ ou ↓, como na guitarra de plástico. Notas de topo branco são hammer-ons e pull-offs: com a sequência valendo, basta trocar de casa, sem palhetar.'}};
 
 function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 const mtof=m=>440*Math.pow(2,(m-69)/12);
@@ -559,45 +559,71 @@ function tempoMap(res,tempos){
   let acc=0;for(let i=0;i<T.length;i++){if(i)acc+=(T[i].tick-T[i-1].tick)/res*T[i-1].spq;T[i].sec=acc;}
   return tick=>{let lo=0,hi=T.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(T[m].tick<=tick)lo=m;else hi=m-1;}const a=T[lo];return a.sec+(tick-a.tick)/res*a.spq;};
 }
+// hammer-on / pull-off (HOPO) e nota de tapping, como no GH3 e no Clone Hero:
+// nota única, perto da anterior (até o limite em ticks) e em outra casa vira HOPO sozinha;
+// os modificadores do chart forçam ou invertem isso. Fica h:1 (HOPO) ou tp:1 (tapping) em cada nota.
+const inMod=(r,tick)=>tick>=r.s&&(tick<r.e||tick===r.s);
+function hopoTypes(ns,mods,th,fmt){
+  const by=new Map();for(const n of ns){if(!by.has(n.tick))by.set(n.tick,[]);by.get(n.tick).push(n);}
+  const ticks=[...by.keys()].sort((a,b)=>a-b),M=mods||[];let pt=null,pl=null;
+  for(const tk of ticks){
+    const g=by.get(tk),lanes=g.map(n=>n.lane),single=lanes.length===1;
+    let h=pt!==null&&tk-pt<=th&&single&&!pl.includes(lanes[0]);
+    const has=k=>M.some(r=>r.k===k&&inMod(r,tk));
+    if(fmt==='chart'){if(has('f')&&pt!==null)h=!h;}
+    else if(has('h'))h=true;else if(has('s'))h=false;
+    const tp=has('t');
+    for(const n of g){n.h=h&&!tp?1:0;if(tp)n.tp=1;}
+    pt=tk;pl=lanes;
+  }
+}
+function hopoThreshold(res,fmt,info){
+  const i=info||{},on=v=>/^(1|true)$/i.test(String(v||'').trim()),f=+(i.hopo_frequency||i.hopofreq||0);
+  if(on(i.eighthnote_hopo))return Math.floor(res/2)+1;
+  if(f>0)return Math.floor(f*res/480);
+  return fmt==='chart'?Math.floor(65*res/192):Math.floor(res/3)+1;
+}
 function finishChart(raw){
-  const sec=tempoMap(raw.res,raw.tempos),off=raw.offset||0;
-  const conv=(N,S)=>{const diffs={},sp={};
+  const sec=tempoMap(raw.res,raw.tempos),off=raw.offset||0,th=hopoThreshold(raw.res,raw.fmt,raw.info);
+  const conv=(N,S,Md)=>{const diffs={},sp={};
   for(const dk of Object.keys(CH_DIFFS)){
     const ns=N[dk];if(!ns||!ns.length)continue;
     const out=[];const seen=new Set();
-    for(const n of ns){if(n.lane<0||n.lane>4)continue;const k=n.tick*8+n.lane;if(seen.has(k))continue;seen.add(k);const t=sec(n.tick)+off,e=sec(n.tick+n.len)+off,len=n.len>0&&e-t>=.15?e-t:0;out.push({time:+t.toFixed(3),lane:n.lane,len:+len.toFixed(3)});}
+    const ok=ns.filter(n=>{if(n.lane<0||n.lane>4)return false;const k=n.tick*8+n.lane;if(seen.has(k))return false;seen.add(k);return true;});
+    hopoTypes(ok,Md&&Md[dk],th,raw.fmt);
+    for(const n of ok){const t=sec(n.tick)+off,e=sec(n.tick+n.len)+off,len=n.len>0&&e-t>=.15?e-t:0,o={time:+t.toFixed(3),lane:n.lane,len:+len.toFixed(3),h:n.h};if(n.tp)o.tp=1;out.push(o);}
     out.sort((a,b)=>a.time-b.time||a.lane-b.lane);
     if(out.length)diffs[dk]=out;
     const ph=(S[dk]||[]).map(q=>[+(sec(q.tick)+off).toFixed(3),+(sec(q.tick+Math.max(1,q.len))+off+.001).toFixed(3)]);
     if(ph.length)sp[dk]=ph;
   }
   return{diffs,sp};};
-  const{diffs,sp}=conv(raw.notes,raw.sp),parts={};
+  const{diffs,sp}=conv(raw.notes,raw.sp,raw.mods),parts={};
   if(!Object.keys(diffs).length)throw new Error('nonotes');
   // outras partes do chart (baixo, guitarra base) para o modo batalha
-  for(const[k,v]of Object.entries(raw.parts||{})){const r=conv(v.notes,v.sp);if(Object.keys(r.diffs).length)parts[k]=r;}
+  for(const[k,v]of Object.entries(raw.parts||{})){const r=conv(v.notes,v.sp,v.mods);if(Object.keys(r.diffs).length)parts[k]=r;}
   const beats=[];const all=Object.values(diffs).flat();const last=Math.max(...all.map(n=>n.time+n.len));
   for(let k=0;k<20000;k++){const t=sec(k*raw.res)+off;if(t>last+4)break;beats.push(+t.toFixed(4));}
   return{name:raw.name||'',artist:raw.artist||'',diffs,sp,beats,last,parts};
 }
-function parseChartText(txt){
+function parseChartText(txt,info){
   const sec={};txt.replace(/\[([^\]\r\n]+)\]\s*\{([\s\S]*?)\}/g,(m,n,b)=>{sec[n.trim()]=b;return'';});
   if(!sec.Song&&!sec.SyncTrack)throw new Error('format');
   const kv={};(sec.Song||'').split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\w+)\s*=\s*(.*?)\s*$/);if(m)kv[m[1]]=m[2].replace(/^"|"$/g,'');});
   const res=+kv.Resolution||192,tempos=[];
   (sec.SyncTrack||'').split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\s*=\s*B\s+(\d+)/);if(m&&+m[2]>0)tempos.push({tick:+m[1],spq:60000/+m[2]});});
-  const inst=sfx=>{const notes={},sp={};let any=false;
+  const inst=sfx=>{const notes={},sp={},mods={};let any=false;
     for(const[dk,nm]of Object.entries(CH_DIFFS)){
-      const b=sec[nm+sfx];if(!b)continue;notes[dk]=[];sp[dk]=[];any=true;
+      const b=sec[nm+sfx];if(!b)continue;notes[dk]=[];sp[dk]=[];mods[dk]=[];any=true;
       b.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\s*=\s*([NS])\s+(\d+)\s+(\d+)/);if(!m)return;const tick=+m[1],a=+m[3],len=+m[4];
-        if(m[2]==='N'&&a<=4)notes[dk].push({tick,lane:a,len});else if(m[2]==='S'&&a===2)sp[dk].push({tick,len});});
+        if(m[2]==='N'&&a<=4)notes[dk].push({tick,lane:a,len});else if(m[2]==='N'&&(a===5||a===6))mods[dk].push({s:tick,e:tick,k:a===5?'f':'t'});else if(m[2]==='S'&&a===2)sp[dk].push({tick,len});});
     }
-    return any?{notes,sp}:null;};
-  const main=inst('Single')||{notes:{},sp:{}},parts={},bass=inst('DoubleBass'),rhy=inst('DoubleRhythm')||inst('DoubleGuitar');
+    return any?{notes,sp,mods}:null;};
+  const main=inst('Single')||{notes:{},sp:{},mods:{}},parts={},bass=inst('DoubleBass'),rhy=inst('DoubleRhythm')||inst('DoubleGuitar');
   if(bass)parts.bass=bass;if(rhy)parts.rhythm=rhy;
-  return finishChart({res,tempos,notes:main.notes,sp:main.sp,parts,offset:0,name:kv.Name,artist:kv.Artist}); // o Clone Hero ignora o Offset do .chart (usa o delay do song.ini)
+  return finishChart({res,tempos,notes:main.notes,sp:main.sp,mods:main.mods,parts,offset:0,name:kv.Name,artist:kv.Artist,fmt:'chart',info}); // o Clone Hero ignora o Offset do .chart (usa o delay do song.ini)
 }
-function parseMidi(ab){
+function parseMidi(ab,info){
   const d=new DataView(ab),L=d.byteLength;let p=0;
   const str=n=>{let s='';for(let i=0;i<n&&p+i<L;i++)s+=String.fromCharCode(d.getUint8(p+i));p+=n;return s;};
   const vlq=()=>{let v=0,b;do{b=d.getUint8(p++);v=(v<<7)|(b&127);}while(b&128);return v;};
@@ -613,7 +639,9 @@ function parseMidi(ab){
       tick+=vlq();let st=d.getUint8(p);
       if(st<0x80)st=rs;else{p++;if(st<0xF0)rs=st;}
       if(st===0xFF){const ty=d.getUint8(p++),ln=vlq();if(ty===3)name=str(ln);else{if(ty===0x51)ev.push({tick,spq:((d.getUint8(p)<<16)|(d.getUint8(p+1)<<8)|d.getUint8(p+2))/1e6});p+=ln;}}
-      else if(st===0xF0||st===0xF7){p+=vlq();}
+      else if(st===0xF0||st===0xF7){const ln=vlq(),q=p;p+=ln;
+        // SysEx do Phase Shift: 'P' 'S' 0 <tipo> <dificuldade> <modificador> <valor>; modificador 4 = tapping
+        if(ln>=7&&d.getUint8(q)===0x50&&d.getUint8(q+1)===0x53&&d.getUint8(q+2)===0&&d.getUint8(q+5)===4)ev.push({tick,ps:d.getUint8(q+4),v:d.getUint8(q+6)});}
       else{const hi=st&0xF0,a=d.getUint8(p++),b=(hi===0xC0||hi===0xD0)?0:d.getUint8(p++);if(hi===0x90&&b>0)ev.push({tick,on:a});else if(hi===0x80||(hi===0x90&&b===0))ev.push({tick,off:a});}
     }
     p=end;tracks.push({name:name.trim(),ev});
@@ -623,26 +651,29 @@ function parseMidi(ab){
   const gt=pick('PART GUITAR')||pick('T1 GEMS')||pick('PART LEAD')||pick('PART BASS')||tracks.find(t=>t.ev.some(e=>e.on>=96&&e.on<=100));
   if(!gt)throw new Error('nonotes');
   const base={easy:60,medium:72,hard:84,expert:96};
-  const read=tr=>{const notes={},sp={},open={};
-    for(const dk in base){notes[dk]=[];sp[dk]=[];}
+  const read=tr=>{const notes={},sp={},open={},mods={},psOpen={};
+    for(const dk in base){notes[dk]=[];sp[dk]=[];mods[dk]=[];}
+    const dks=Object.keys(base);
     for(const e of tr.ev){
+      if(e.ps!=null){const ds=e.ps===0xFF?dks:dks[e.ps]?[dks[e.ps]]:[];for(const dk of ds){if(e.v){if(psOpen[dk]==null)psOpen[dk]=e.tick;}else if(psOpen[dk]!=null){mods[dk].push({s:psOpen[dk],e:e.tick,k:'t'});delete psOpen[dk];}}continue;}
       const k=e.on!=null?e.on:e.off;
       if(e.on!=null){open[k]=e.tick;continue;}
       const s=open[k];if(s==null)continue;delete open[k];
-      for(const dk in base){const l=k-base[dk];if(l>=0&&l<=4){const len=e.tick-s;notes[dk].push({tick:s,lane:l,len:len>div/3?len:0});}}
+      for(const dk in base){const l=k-base[dk];if(l>=0&&l<=4){const len=e.tick-s;notes[dk].push({tick:s,lane:l,len:len>div/3?len:0});}else if(l===5||l===6)mods[dk].push({s,e:e.tick,k:l===5?'h':'s'});}
       if(k===116)for(const dk in base)sp[dk].push({tick:s,len:e.tick-s});
+      if(k===104)for(const dk in base)mods[dk].push({s,e:e.tick,k:'t'});
     }
     for(const dk in base)notes[dk].sort((a,b)=>a.tick-b.tick);
-    return{notes,sp};};
+    return{notes,sp,mods};};
   const main=read(gt),parts={},bt=pick('PART BASS'),rt=pick('PART RHYTHM')||pick('PART GUITAR COOP');
   if(bt&&bt!==gt)parts.bass=read(bt);if(rt&&rt!==gt)parts.rhythm=read(rt);
-  return finishChart({res:div,tempos,notes:main.notes,sp:main.sp,parts,offset:0,name:'',artist:''});
+  return finishChart({res:div,tempos,notes:main.notes,sp:main.sp,mods:main.mods,parts,offset:0,name:'',artist:'',fmt:'mid',info});
 }
 function parseIni(txt){const o={};txt.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\w+)\s*=\s*(.*?)\s*$/);if(m)o[m[1].toLowerCase()]=m[2];});return o;}
 function pickDiff(diffs,dk){const order=['easy','medium','hard','expert'],i=order.indexOf(dk);for(let d=0;d<4;d++){for(const j of[i-d,i+d]){const k=order[j];if(k&&diffs[k])return k;}}return Object.keys(diffs)[0];}
 function chartForPlay(diffs,sp,dk,shift){
   const k=pickDiff(diffs,dk),sh=shift||0,notes=[];
-  for(const n of diffs[k]){const t=n.time+sh;if(t<0)continue;notes.push({lane:n.lane,time:t,len:n.len>0?1:0,endTime:t+(n.len||0),star:-1});}
+  for(const n of diffs[k]){const t=n.time+sh;if(t<0)continue;const o={lane:n.lane,time:t,len:n.len>0?1:0,endTime:t+(n.len||0),star:-1};if(n.h!=null)o.ho=n.h;if(n.tp)o.tp=1;notes.push(o);}
   const ph=(sp&&sp[k])||null;let wins=ph?ph.map(([a,b])=>[a+sh,b+sh]):[];
   if(!wins.length){const end=notes.length?notes[notes.length-1].time:0;for(let a=0;a<end;a+=20)wins.push([a+6,a+12]);}
   return{notes,phrases:addStars(notes,wins,'time'),used:k};
@@ -1089,11 +1120,12 @@ function reshapeNotes(p,e,t){
   const head=p.notes.slice(0,p.cursor);let tail=p.notes.slice(p.cursor);
   if(e.k==='diffup'){
     tail=tail.filter(n=>{if(!inW(n))return true;if(n.star>=0)p.phrases[n.star].broken=true;return false;});
-    for(const n of p.alt||[])if(n.time>=a&&n.time<b)tail.push({lane:n.lane,time:n.time,len:n.len,endTime:n.endTime,star:-1});
+    for(const n of p.alt||[])if(n.time>=a&&n.time<b)tail.push({lane:n.lane,time:n.time,len:n.len,endTime:n.endTime,star:-1,ho:n.ho,tp:n.tp});
   }else{
     const lanes=Math.max(2,p.nl),byT=new Map();
     for(const n of tail)if(inW(n)){const k=n.time.toFixed(3);byT.set(k,(byT.get(k)||[]).concat(n));}
-    for(const ns of byT.values()){if(ns.length!==1)continue;const n=ns[0],l2=n.lane+1<lanes?n.lane+1:n.lane-1;if(l2>=0)tail.push({lane:l2,time:n.time,len:n.len,endTime:n.endTime,star:-1});}
+    // notas em dobro viram acordes, e acorde é palhetado
+    for(const ns of byT.values()){if(ns.length!==1)continue;const n=ns[0],l2=n.lane+1<lanes?n.lane+1:n.lane-1;if(l2>=0){n.ho=0;tail.push({lane:l2,time:n.time,len:n.len,endTime:n.endTime,star:-1,ho:0,tp:n.tp});}}
   }
   tail.sort((x,y)=>x.time-y.time||x.lane-y.lane);
   p.notes=head.concat(tail);
@@ -1147,12 +1179,28 @@ function drawAtkSlots(bx,by,bw,now){
 }
 // casas que aparecem na guitarra: no fácil e no médio fica sem a laranja,
 // mais alguma que o chart importado pedir; as notas da dificuldade de cima (duelo) se ajeitam nelas
+// notas sem marcação do chart (músicas do jogo, charts automáticos, charts guardados antes):
+// a mesma regra do .chart, com o limite de 65/192 de batida medido na batida do lugar
+function beatLenAt(t){
+  const b=G.song&&G.song.beats;
+  if(b&&b.length>1){let lo=0,hi=b.length-2;while(lo<hi){const m=(lo+hi+1)>>1;if(b[m]<=t)lo=m;else hi=m-1;}return b[lo+1]-b[lo];}
+  return G.song&&!G.song.yt?G.song.spb:0;
+}
+function markHopos(notes){
+  if(!notes)return;let pt=null,pl=[];
+  for(let i=0;i<notes.length;){
+    let j=i;while(j<notes.length&&Math.abs(notes[j].time-notes[i].time)<.005)j++;
+    const g=notes.slice(i,j),t=g[0].time,bl=beatLenAt(t);
+    if(g.some(n=>n.ho==null)){const h=bl>0&&pt!==null&&g.length===1&&t-pt<=bl*65/192+.002&&!pl.includes(g[0].lane)?1:0;for(const n of g)if(n.ho==null)n.ho=h;}
+    pt=t;pl=g.map(n=>n.lane);i=j;
+  }
+}
 const LANES_MIN={easy:4,medium:4,hard:5,expert:5};
 function fitLanes(p){
   let m=LANES_MIN[p.diff]||5;for(const n of p.notes)if(n.lane>=m)m=n.lane+1;p.nl=Math.min(5,m);
   if(p.alt&&p.nl<5){const seen=new Set();p.alt=p.alt.map(n=>n.lane<p.nl?n:Object.assign({},n,{lane:p.nl-1})).filter(n=>{const k=n.time.toFixed(3)+'|'+n.lane;return!seen.has(k)&&!!seen.add(k);});}
 }
-function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0,atk:[],eff:[],alt:null,flipOn:false,ovOn:false,nl:5};}
+function makePlayer(i,diff,mode){return{i,diff,mode,D:DIFFS[diff],notes:[],phrases:[],cursor:0,score:0,susAcc:0,combo:0,maxCombo:0,hits:0,misses:0,meter:.5,energy:0,spActive:false,holds:[],fx:[],texts:[],msgs:[],lastT:0,hopoAt:null,held:[0,0,0,0,0],flash:[-9,-9,-9,-9,-9],out:false,outT:0,muted:false,touch:false,x0:0,x1:0,CX:0,boardW:0,laneW:0,atk:[],eff:[],alt:null,flipOn:false,ovOn:false,nl:5};}
 function songT(){
   if(G.song&&G.song.yt){if(!G.ytGo){const r=(G.ytStartAt-performance.now())/1000;return(r>60?-99:-r)-G.offset/1000;}return ytNow()-G.offset/1000;}
   return AC.currentTime-G.startTime-(G.lat||0)-G.offset/1000;
@@ -1191,7 +1239,7 @@ async function startGame(startAt){
     pl.notes=ch.notes;pl.phrases=ch.phrases;
     // duelo: notas da dificuldade de cima, para o ataque "dificuldade maior"
     const nd=duelOn()&&nextDiff(pl.diff);if(nd){const c2=mk(nd);if(!c2.used||c2.used!==ch.used)pl.alt=c2.notes;}
-    fitLanes(pl);G.players.push(pl);
+    fitLanes(pl);markHopos(pl.notes);markHopos(pl.alt);G.players.push(pl);
   }
   Object.assign(G,{state:'play',paused:false,sched:0});
   layoutPlayers();
@@ -1227,7 +1275,7 @@ async function startYT(startAt,NP){
   for(let i=0;i<NP;i++){const pl=makePlayer(i,G.diffs[i],NP===1?G.mode:'tap');const c2=buildYTChart(ch,pl.diff);pl.notes=c2.notes;pl.phrases=c2.phrases;
     if(G.bt){pl.slot=G.bt.mine[i];if(G.bt.parts)pl.part='guitar';}
     const nd=duelOn()&&nextDiff(pl.diff);if(nd){const c3=buildYTChart(ch,nd);if(!c3.used||c3.used!==c2.used)pl.alt=c3.notes;}
-    fitLanes(pl);G.players.push(pl);}
+    fitLanes(pl);markHopos(pl.notes);markHopos(pl.alt);G.players.push(pl);}
   Object.assign(G,{state:'play',paused:false,sched:0,ytGo:false,ytSeek:0,ytStartAt:performance.now()+1e9});
   layoutPlayers();
   master.gain.cancelScheduledValues(AC.currentTime);master.gain.setValueAtTime(0,AC.currentTime);master.gain.setValueAtTime(.85,AC.currentTime+.3);
@@ -1297,7 +1345,7 @@ const multBase=()=>Math.min(4,1+Math.floor(P.combo/10));
 const mult=()=>multBase()*(P.spActive?2:1);
 
 function hitNote(n,t){
-  n.hit=true;P.hits++;P.combo++;P.maxCombo=Math.max(P.maxCombo,P.combo);
+  n.hit=true;P.tapPend=false;P.hits++;P.combo++;P.maxCombo=Math.max(P.maxCombo,P.combo);
   P.score+=50*mult();
   P.meter=Math.min(1,P.meter+(P.spActive?.03:.016));
   setMute(false);
@@ -1327,29 +1375,53 @@ function tapHit(lane){
   }
   overhit();
 }
-function strum(){
-  const t=songT(),W=P.D.hit;
-  if(P.eff.length&&duelOn()&&duelLock(P))return;let t0=null;const grp=[];
+// a próxima nota (ou acorde) dentro da janela de acerto
+function nextGroup(t,W){
+  let t0=null;const grp=[];
   for(let i=P.cursor;i<P.notes.length;i++){
     const n=P.notes[i];if(n.time>t+W)break;
     if(n.hit||n.missed)continue;
     if(t0===null){if(Math.abs(n.time-t)<=W)t0=n.time;else continue;}
     if(Math.abs(n.time-t0)<.005)grp.push(n);
   }
-  if(!grp.length){overhit();return;}
-  const lanes=grp.map(n=>n.lane);let ok;
-  if(grp.length===1){const L=lanes[0];ok=P.held[L]&&P.held.every((h,i)=>!h||i<=L);}
-  else ok=P.held.every((h,i)=>!!h===lanes.includes(i));
-  if(ok)grp.forEach(n=>hitNote(n,t));else overhit();
+  return grp;
 }
-function press(l){if(P.out||P.held[l]||l>=P.nl)return;if(P.eff.length&&duelOn()&&duelPress(l))return;P.held[l]=1;if(P.mode==='tap'||P.touch)tapHit(l);}
-function release(l){P.held[l]=0;}
+// nota única aceita casas mais graves seguradas junto (ancoragem); acorde precisa das casas exatas
+function fretsMatch(grp){
+  const lanes=grp.map(n=>n.lane);
+  if(grp.length===1){const L=lanes[0];return!!P.held[L]&&P.held.every((h,i)=>!h||i<=L);}
+  return P.held.every((h,i)=>!!h===lanes.includes(i));
+}
+// palhetada que vem logo depois de um hammer-on não conta como erro (folga do YARG: 80 ms)
+const HOPO_GRACE=.08;
+function strum(){
+  const t=songT(),W=P.D.hit;
+  if(P.eff.length&&duelOn()&&duelLock(P))return;
+  const grp=nextGroup(t,W),grace=P.hopoAt!=null&&t-P.hopoAt<HOPO_GRACE;P.hopoAt=null;
+  if(grp.length&&fretsMatch(grp)){grp.forEach(n=>hitNote(n,t));return;}
+  if(!grace)overhit();
+}
+// hammer-on / pull-off: no modo Palhetada, apertar ou soltar a casa toca a nota HOPO sem palhetar,
+// desde que a sequência não tenha quebrado; nota de tapping vale até com a sequência quebrada
+function hammer(){
+  if(P.mode!=='strum'||P.touch||P.out)return;
+  if(P.eff.length&&duelOn()&&duelLock(P))return;
+  const t=songT(),grp=nextGroup(t,P.D.hit);if(!grp.length)return;
+  const tp=grp.every(n=>n.tp),ho=grp.every(n=>n.ho||n.tp);
+  if(!ho||!(tp||P.combo>0||P.hits+P.misses===0))return;
+  if(fretsMatch(grp)){grp.forEach(n=>hitNote(n,t));P.hopoAt=t;}
+}
+// casa trocada um pouco antes da HOPO chegar: ela sai assim que entra na janela
+// (cada HOPO pede uma troca de casa nova, como no YARG)
+function press(l){if(P.out||P.held[l]||l>=P.nl)return;if(P.eff.length&&duelOn()&&duelPress(l))return;P.held[l]=1;if(P.mode==='tap'||P.touch)tapHit(l);else{P.tapPend=true;hammer();}}
+function release(l){if(!P.held[l])return;P.held[l]=0;if(P.mode==='strum'){P.tapPend=true;hammer();}}
 function activateSP(){if(G.state!=='play'||G.paused||P.out)return;if(duelOn()){duelKey();return;}if(P.spActive||P.energy<.5)return;P.spActive=true;sfxStar(G.players.length>1?(P.i?.3:-.3):0);msg('PODER ESTELAR!','#9feeff');}
 
 function updatePlayer(t){
   const dt=Math.max(0,t-P.lastT);P.lastT=t;
   if(P.out)return;
   if(P.eff.length&&duelOn())effectsTick(t,dt);
+  if(P.tapPend&&!G.paused)hammer();
   const W=P.D.hit;
   while(P.cursor<P.notes.length){
     const n=P.notes[P.cursor];
@@ -1784,7 +1856,8 @@ function drawTail(n,t){
 }
 // notas: cada cor vira uma imagem pronta (corpo com volume, aro cromado, tampa colorida abaulada e centro afundado)
 const GEM_R=60;
-function gemSprite(col,star){return cached((star?'gst:':'gem:')+col,()=>{
+// kind: 0 nota palhetada, 1 hammer-on/pull-off (topo branco aceso), 2 tapping (centro escuro com aro aceso)
+function gemSprite(col,star,kind){kind=kind|0;return cached((star?'gst:':'gem:')+kind+':'+col,()=>{
   const R=GEM_R,ry=R*.6,dep=ry*.62,pad=R*.55,W2=R*2+pad*2,H2=ry*2+dep+pad*2,cx=W2/2,cy=pad+ry,[o,x]=offCanvas(W2,H2);
   const el=(X,Y,rx,rr)=>{x.beginPath();x.ellipse(X,Y,rx,rr,0,0,Math.PI*2);};
   const sp=(X,Y,Rr,sq)=>{x.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?Rr*.45:Rr;x.lineTo(X+Math.cos(a)*r,Y+Math.sin(a)*r*sq);}x.closePath();};
@@ -1799,6 +1872,17 @@ function gemSprite(col,star){return cached((star?'gst:':'gem:')+col,()=>{
     x.fillStyle='#070506';el(cx,cy,R,ry);x.fill();
     const cg=x.createRadialGradient(cx-R*.3,cy-ry*.55,R*.05,cx,cy,R*.95);cg.addColorStop(0,shade(col,1.5));cg.addColorStop(.38,shade(col,1.08));cg.addColorStop(.8,col);cg.addColorStop(1,shade(col,.62));
     x.fillStyle=cg;el(cx,cy-ry*.02,R*.93,ry*.88);x.fill();
+    if(kind===1){
+      // HOPO: como no GH3, o topo inteiro fica branco e aceso, com um aro fino da cor
+      const hg=x.createRadialGradient(cx-R*.15,cy-ry*.25,R*.04,cx,cy,R*.8);hg.addColorStop(0,'#ffffff');hg.addColorStop(.6,'#f4f1f6');hg.addColorStop(1,shade(col,1.35));
+      x.fillStyle=hg;el(cx,cy-ry*.02,R*.74,ry*.68);x.fill();
+      x.strokeStyle=shade(col,.75);x.lineWidth=R*.05;el(cx,cy-ry*.02,R*.74,ry*.68);x.stroke();
+      x.fillStyle='rgba(255,255,255,.95)';el(cx-R*.18,cy-ry*.24,R*.24,ry*.1);x.fill();
+    }else if(kind===2){
+      // tapping: centro escuro com aro aceso da cor
+      x.fillStyle='#0b090a';el(cx,cy,R*.66,ry*.61);x.fill();
+      x.strokeStyle=shade(col,1.5);x.lineWidth=R*.09;el(cx,cy,R*.5,ry*.46);x.stroke();
+    }else{
     // anel preto
     const kg=x.createLinearGradient(0,cy-ry*.5,0,cy+ry*.5);kg.addColorStop(0,'#000');kg.addColorStop(.6,'#151214');kg.addColorStop(1,'#2a2427');
     x.fillStyle=kg;el(cx,cy,R*.54,ry*.5);x.fill();
@@ -1806,6 +1890,7 @@ function gemSprite(col,star){return cached((star?'gst:':'gem:')+col,()=>{
     const wg=x.createRadialGradient(cx-R*.1,cy-ry*.16,R*.02,cx,cy,R*.4);wg.addColorStop(0,'#ffffff');wg.addColorStop(.55,'#f1eef2');wg.addColorStop(1,'#a9a3ad');
     x.fillStyle=wg;el(cx,cy-ry*.02,R*.39,ry*.35);x.fill();
     x.fillStyle='rgba(255,255,255,.9)';el(cx-R*.12,cy-ry*.17,R*.15,ry*.08);x.fill();
+    }
     // brilho na cor
     x.globalAlpha=.5;x.strokeStyle='#fff';x.lineWidth=R*.06;x.beginPath();x.ellipse(cx,cy-ry*.03,R*.76,ry*.7,0,Math.PI*1.12,Math.PI*1.55);x.stroke();x.globalAlpha=1;
   }else{
@@ -1817,6 +1902,8 @@ function gemSprite(col,star){return cached((star?'gst:':'gem:')+col,()=>{
     const cg=x.createRadialGradient(cx-R*.2,cy-ry*.45,R*.04,cx,cy,R*.8);cg.addColorStop(0,shade(col,1.6));cg.addColorStop(.4,shade(col,1.1));cg.addColorStop(1,shade(col,.55));
     x.fillStyle=cg;sp(cx,cy-ry*.03,R*.84,.62);x.fill();
     x.fillStyle='rgba(255,255,255,.55)';sp(cx-R*.1,cy-ry*.2,R*.3,.5);x.fill();
+    if(kind===1){x.fillStyle='rgba(255,255,255,.92)';sp(cx,cy-ry*.03,R*.5,.62);x.fill();}
+    else if(kind===2){x.fillStyle='#0b090a';sp(cx,cy-ry*.03,R*.45,.62);x.fill();}
   }
   return{img:o,w:W2,h:H2,ox:cx,oy:cy};
 });}
@@ -1826,7 +1913,9 @@ function drawGem(n,t){
   const dim=n.missed||n.ghost,col=dim?'#5a4f52':(P.spActive?'#9feeff':LANE_COLORS[n.lane]);
   c.globalAlpha=n.ghost?.32:n.missed?.55:1;
   if(P.ovOn&&!n.ghost)c.globalAlpha*=.12+.88*Math.abs(Math.sin(performance.now()/85+n.time*7.3));
-  const s=gemSprite(col,star);c.drawImage(s.img,x-s.ox*k,y-s.oy*k,s.w*k,s.h*k);
+  // o visual de HOPO e tapping só aparece no modo Palhetada, onde muda o jeito de tocar
+  const kind=P.mode==='strum'&&!P.touch?(n.tp?2:n.ho?1:0):0;
+  const s=gemSprite(col,star,kind);c.drawImage(s.img,x-s.ox*k,y-s.oy*k,s.w*k,s.h*k);
   c.globalAlpha=1;
 }
 function drawFrets(now){
@@ -2961,7 +3050,7 @@ function parseSng(ab){
 const isChartFile=n=>/\.(chart|mid|midi)$/i.test(n);
 const isStem=n=>/\.(ogg|opus|mp3|wav|m4a|flac|aac|webm)$/i.test(n)&&!/^(preview|crowd|video|background)\b/i.test(n);
 function pickChart(names){return names.find(n=>/^notes\.chart$/i.test(n))||names.find(n=>/^notes\.midi?$/i.test(n))||names.find(n=>/\.chart$/i.test(n))||names.find(n=>/\.midi?$/i.test(n))||null;}
-async function chartFrom(name,ab){return/\.chart$/i.test(name)?parseChartText(new TextDecoder().decode(ab)):parseMidi(ab);}
+async function chartFrom(name,ab,info){return/\.chart$/i.test(name)?parseChartText(new TextDecoder().decode(ab),info):parseMidi(ab,info);}
 function applyDelay(chart,ms){const s=(+ms||0)/1000;if(!s)return chart;for(const c of[chart,...Object.values(chart.parts||{})]){for(const k in c.diffs)c.diffs[k].forEach(n=>n.time=+(n.time+s).toFixed(3));for(const k in c.sp)c.sp[k].forEach(w=>{w[0]+=s;w[1]+=s;});}chart.beats=chart.beats.map(b=>b+s);chart.last+=s;return chart;}
 // batalha contra chefe do GH3 (a frase de carregamento do song.ini diz "Boss Battle")
 const isBossBattle=info=>/boss battle/i.test(String(info&&info.loading_phrase||''));
@@ -2978,9 +3067,9 @@ async function coverThumb(entries){
 // lê uma música a partir de uma lista de arquivos [{name, ab()}] (pasta ou pacote .sng)
 async function songFromEntries(entries,info){
   const cn=pickChart(entries.map(e=>e.name));if(!cn)throw new Error('nochart');
-  const chart=await chartFrom(cn,await entries.find(e=>e.name===cn).ab());
   const ini=entries.find(e=>/^song\.ini$/i.test(e.name));
   if(ini&&!info)info=parseIni(new TextDecoder().decode(await ini.ab()));
+  const chart=await chartFrom(cn,await entries.find(e=>e.name===cn).ab(),info);
   const stems=entries.map(e=>e.name).filter(isStem);
   if(!stems.length)throw new Error('noaudio');
   return{chart,info:info||{},stems};

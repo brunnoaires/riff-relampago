@@ -20,5 +20,6 @@ Tudo roda no navegador, em `index.html` mais a biblioteca PeerJS em `vendor/` (l
 - Jogador 1: A S D F G, Espaço para o Poder Estelar.
 - Jogador 2: H J K L Ç, Enter para o Poder Estelar.
 - Modo Palhetada (1 jogador): segure a cor e palhete com Enter, ↑ ou ↓.
+  - Hammer-ons e pull-offs como no Guitar Hero 3: as notas de topo branco saem só trocando de casa, sem palhetar, enquanto a sequência não quebrar. As de centro escuro são de tapping e saem até com a sequência quebrada. Nos charts do Clone Hero valem as marcações do chart (forçar HOPO ou palhetada, tapping) e o `hopo_frequency` do song.ini.
 - Esc pausa. No celular, toque nas pistas.
 - Volume do jogo: no menu e na pausa, ou com − e + a qualquer hora; M tira o som. Fica salvo no navegador.
